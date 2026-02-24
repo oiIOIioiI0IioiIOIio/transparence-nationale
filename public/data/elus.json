@@ -1,0 +1,351 @@
+[
+  {
+    "id": "emmanuel-macron",
+    "nom": "Macron",
+    "prenom": "Emmanuel",
+    "fonction": "Président de la République",
+    "region": "Île-de-France",
+    "revenus": 182000,
+    "patrimoine": 1200000,
+    "immobilier": 850000,
+    "placements": 280000,
+    "mandats": ["Président de la République", "Co-Prince d'Andorre"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/Emmanuel_Macron"
+    }
+  },
+  {
+    "id": "marine-le-pen",
+    "nom": "Le Pen",
+    "prenom": "Marine",
+    "fonction": "Députée du Pas-de-Calais",
+    "region": "Hauts-de-France",
+    "revenus": 95000,
+    "patrimoine": 2100000,
+    "immobilier": 1650000,
+    "placements": 380000,
+    "mandats": ["Députée", "Présidente du Rassemblement National"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "assemblee": "https://www.assemblee-nationale.fr",
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/Marine_Le_Pen"
+    }
+  },
+  {
+    "id": "jean-luc-melenchon",
+    "nom": "Mélenchon",
+    "prenom": "Jean-Luc",
+    "fonction": "Député des Bouches-du-Rhône",
+    "region": "Provence-Alpes-Côte d'Azur",
+    "revenus": 92000,
+    "patrimoine": 890000,
+    "immobilier": 620000,
+    "placements": 210000,
+    "mandats": ["Député", "Coordinateur de La France Insoumise"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "assemblee": "https://www.assemblee-nationale.fr",
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/Jean-Luc_M%C3%A9lenchon"
+    }
+  },
+  {
+    "id": "edouard-philippe",
+    "nom": "Philippe",
+    "prenom": "Édouard",
+    "fonction": "Maire du Havre",
+    "region": "Normandie",
+    "revenus": 125000,
+    "patrimoine": 1450000,
+    "immobilier": 980000,
+    "placements": 410000,
+    "mandats": ["Maire du Havre", "Président Horizons"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/%C3%89douard_Philippe"
+    }
+  },
+  {
+    "id": "valerie-pecresse",
+    "nom": "Pécresse",
+    "prenom": "Valérie",
+    "fonction": "Présidente Île-de-France",
+    "region": "Île-de-France",
+    "revenus": 145000,
+    "patrimoine": 3200000,
+    "immobilier": 2450000,
+    "placements": 680000,
+    "mandats": ["Présidente du Conseil Régional", "Présidente LR Île-de-France"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/Val%C3%A9rie_P%C3%A9cresse"
+    }
+  },
+  {
+    "id": "eric-ciotti",
+    "nom": "Ciotti",
+    "prenom": "Éric",
+    "fonction": "Député des Alpes-Maritimes",
+    "region": "Provence-Alpes-Côte d'Azur",
+    "revenus": 88000,
+    "patrimoine": 1650000,
+    "immobilier": 1280000,
+    "placements": 310000,
+    "mandats": ["Député", "Président LR"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "assemblee": "https://www.assemblee-nationale.fr",
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/%C3%89ric_Ciotti"
+    }
+  },
+  {
+    "id": "olivier-faure",
+    "nom": "Faure",
+    "prenom": "Olivier",
+    "fonction": "Député de Seine-et-Marne",
+    "region": "Île-de-France",
+    "revenus": 86000,
+    "patrimoine": 750000,
+    "immobilier": 520000,
+    "placements": 180000,
+    "mandats": ["Député", "Premier Secrétaire du Parti Socialiste"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "assemblee": "https://www.assemblee-nationale.fr",
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/Olivier_Faure_(homme_politique)"
+    }
+  },
+  {
+    "id": "fabien-roussel",
+    "nom": "Roussel",
+    "prenom": "Fabien",
+    "fonction": "Député du Nord",
+    "region": "Hauts-de-France",
+    "revenus": 84000,
+    "patrimoine": 420000,
+    "immobilier": 290000,
+    "placements": 110000,
+    "mandats": ["Député", "Secrétaire National PCF"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "assemblee": "https://www.assemblee-nationale.fr",
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/Fabien_Roussel"
+    }
+  },
+  {
+    "id": "francois-bayrou",
+    "nom": "Bayrou",
+    "prenom": "François",
+    "fonction": "Maire de Pau",
+    "region": "Nouvelle-Aquitaine",
+    "revenus": 98000,
+    "patrimoine": 1580000,
+    "immobilier": 1150000,
+    "placements": 380000,
+    "mandats": ["Maire de Pau", "Président du MoDem"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/Fran%C3%A7ois_Bayrou"
+    }
+  },
+  {
+    "id": "yannick-jadot",
+    "nom": "Jadot",
+    "prenom": "Yannick",
+    "fonction": "Député Européen",
+    "region": "Île-de-France",
+    "revenus": 95000,
+    "patrimoine": 685000,
+    "immobilier": 480000,
+    "placements": 165000,
+    "mandats": ["Député Européen", "EELV"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/Yannick_Jadot"
+    }
+  },
+  {
+    "id": "bruno-retailleau",
+    "nom": "Retailleau",
+    "prenom": "Bruno",
+    "fonction": "Sénateur de Vendée",
+    "region": "Pays de la Loire",
+    "revenus": 87000,
+    "patrimoine": 1820000,
+    "immobilier": 1350000,
+    "placements": 420000,
+    "mandats": ["Sénateur", "Président LR Sénat"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/Bruno_Retailleau"
+    }
+  },
+  {
+    "id": "sandrine-rousseau",
+    "nom": "Rousseau",
+    "prenom": "Sandrine",
+    "fonction": "Députée de Paris",
+    "region": "Île-de-France",
+    "revenus": 82000,
+    "patrimoine": 520000,
+    "immobilier": 380000,
+    "placements": 120000,
+    "mandats": ["Députée", "EELV"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "assemblee": "https://www.assemblee-nationale.fr",
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/Sandrine_Rousseau"
+    }
+  },
+  {
+    "id": "gabriel-attal",
+    "nom": "Attal",
+    "prenom": "Gabriel",
+    "fonction": "Député des Hauts-de-Seine",
+    "region": "Île-de-France",
+    "revenus": 115000,
+    "patrimoine": 580000,
+    "immobilier": 420000,
+    "placements": 140000,
+    "mandats": ["Député", "Ancien Premier Ministre"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "assemblee": "https://www.assemblee-nationale.fr",
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/Gabriel_Attal"
+    }
+  },
+  {
+    "id": "mathilde-panot",
+    "nom": "Panot",
+    "prenom": "Mathilde",
+    "fonction": "Députée du Val-de-Marne",
+    "region": "Île-de-France",
+    "revenus": 81000,
+    "patrimoine": 385000,
+    "immobilier": 270000,
+    "placements": 95000,
+    "mandats": ["Députée", "Présidente groupe LFI"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "assemblee": "https://www.assemblee-nationale.fr",
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/Mathilde_Panot"
+    }
+  },
+  {
+    "id": "anne-hidalgo",
+    "nom": "Hidalgo",
+    "prenom": "Anne",
+    "fonction": "Maire de Paris",
+    "region": "Île-de-France",
+    "revenus": 135000,
+    "patrimoine": 1450000,
+    "immobilier": 1050000,
+    "placements": 350000,
+    "mandats": ["Maire de Paris", "PS"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/Anne_Hidalgo"
+    }
+  },
+  {
+    "id": "jordan-bardella",
+    "nom": "Bardella",
+    "prenom": "Jordan",
+    "fonction": "Député Européen",
+    "region": "Île-de-France",
+    "revenus": 92000,
+    "patrimoine": 285000,
+    "immobilier": 180000,
+    "placements": 85000,
+    "mandats": ["Député Européen", "Président RN"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/Jordan_Bardella"
+    }
+  },
+  {
+    "id": "laurent-wauquiez",
+    "nom": "Wauquiez",
+    "prenom": "Laurent",
+    "fonction": "Président Auvergne-Rhône-Alpes",
+    "region": "Auvergne-Rhône-Alpes",
+    "revenus": 142000,
+    "patrimoine": 2150000,
+    "immobilier": 1680000,
+    "placements": 420000,
+    "mandats": ["Président Région", "LR"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/Laurent_Wauquiez"
+    }
+  },
+  {
+    "id": "rachida-dati",
+    "nom": "Dati",
+    "prenom": "Rachida",
+    "fonction": "Maire du 7e arrondissement",
+    "region": "Île-de-France",
+    "revenus": 155000,
+    "patrimoine": 1920000,
+    "immobilier": 1450000,
+    "placements": 420000,
+    "mandats": ["Maire", "Députée Européenne", "LR"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/Rachida_Dati"
+    }
+  },
+  {
+    "id": "eric-dupond-moretti",
+    "nom": "Dupond-Moretti",
+    "prenom": "Éric",
+    "fonction": "Ministre de la Justice",
+    "region": "Île-de-France",
+    "revenus": 165000,
+    "patrimoine": 3450000,
+    "immobilier": 2580000,
+    "placements": 780000,
+    "mandats": ["Ministre de la Justice"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/%C3%89ric_Dupond-Moretti"
+    }
+  },
+  {
+    "id": "francois-ruffin",
+    "nom": "Ruffin",
+    "prenom": "François",
+    "fonction": "Député de la Somme",
+    "region": "Hauts-de-France",
+    "revenus": 78000,
+    "patrimoine": 340000,
+    "immobilier": 245000,
+    "placements": 75000,
+    "mandats": ["Député", "LFI"],
+    "photo": "/photos/placeholder.jpg",
+    "liens": {
+      "assemblee": "https://www.assemblee-nationale.fr",
+      "hatvp": "https://www.hatvp.fr",
+      "wikipedia": "https://fr.wikipedia.org/wiki/Fran%C3%A7ois_Ruffin"
+    }
+  }
+]
