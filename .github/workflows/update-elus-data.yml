@@ -19,7 +19,7 @@ on:
     - cron: '0 2 * * 0'
 
 jobs:
-  scrape-hatvp:
+  scrape-elus:
     runs-on: ubuntu-latest
     timeout-minutes: 360  # 6 heures max (pour traiter des milliers d'élus)
     
@@ -49,10 +49,10 @@ jobs:
           restore-keys: |
             hatvp-cache-
       
-      - name: Run HATVP scraper
+      - name: Run generation script
         id: scrape
         run: |
-          python scripts/generate-elus-hatvp-complete.py \
+          python scripts/generate-elus.py \
             ${{ inputs.limit && format('--limit {0}', inputs.limit) || '' }} \
             ${{ inputs.force && '--force' || '' }} \
             --skip-existing \
@@ -73,7 +73,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "Pas de changements à commiter"
           else
-            git commit -m "🤖 Update HATVP data - ${{ steps.scrape.outputs.total_updated }} élus mis à jour"
+            git commit -m "🤖 Update data - ${{ steps.scrape.outputs.total_updated }} élus mis à jour"
             git push
           fi
       
@@ -89,7 +89,7 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "### 📊 Résumé du scraping HATVP" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Résumé de la mise à jour" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Élus mis à jour : ${{ steps.scrape.outputs.total_updated }}" >> $GITHUB_STEP_SUMMARY
           echo "- ⏭️ Élus skippés : ${{ steps.scrape.outputs.total_skipped }}" >> $GITHUB_STEP_SUMMARY
