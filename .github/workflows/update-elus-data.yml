@@ -13,6 +13,11 @@ on:
         required: false
         type: boolean
         default: false
+      skip_existing:
+        description: "Passer les élus déjà traités"
+        required: false
+        type: boolean
+        default: true
   
   # Exécution programmée (tous les dimanches à 2h du matin)
   schedule:
@@ -62,16 +67,21 @@ jobs:
         id: generate
         run: |
           # Construction de la commande
-          CMD="python scripts/generate-elus.py --skip-existing --delay 0.5"
+          CMD="python scripts/generate-elus.py --delay 0.5"
           
           # Ajout de la limite si présente
-          if [ -n "${{ inputs.limit }}" ]; then
-            CMD="$CMD --limit ${{ inputs.limit }}"
+          if [ -n "$\{ inputs.limit }" ]; then
+            CMD="$CMD --limit $\{ inputs.limit }"
           fi
           
           # Ajout du flag force si coché
-          if [ "${{ inputs.force }}" == "true" ]; then
+          if [ "$\{ inputs.force }" == "true" ]; then
             CMD="$CMD --force"
+          fi
+          
+          # Ajout du flag skip-existing (activé par défaut en schedule, configurable en manuel)
+          if [ "$\{ inputs.skip_existing }" != "false" ]; then
+            CMD="$CMD --skip-existing"
           fi
           
           echo "Exécution : $CMD"
@@ -112,7 +122,7 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          if [ "${{ steps.check_changes.outputs.changed }}" == "true" ]; then
+          if [ "$\{ steps.check_changes.outputs.changed }" == "true" ]; then
             echo "## ✅ Données mises à jour" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Élus générés** : ${{ steps.check_changes.outputs.count }}" >> "$GITHUB_STEP_SUMMARY"
