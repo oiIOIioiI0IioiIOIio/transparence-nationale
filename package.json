@@ -8,7 +8,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "scrape": "python3 scripts/scrape-photos.py"
+    "generate-elus": "python3 scripts/generate-elus.py",
+    "scrape-photos": "python3 scripts/scrape-photos.py",
+    "scrape": "npm run generate-elus && npm run scrape-photos"
   },
   "dependencies": {
     "next": "^14.0.0",
