@@ -1,199 +1,124 @@
-# 🇫🇷 Transparence Nationale
+# Transparence Nationale
 
-Une galerie interactive explorant le patrimoine et les revenus des élus français via les données officielles de la HATVP (Haute Autorité pour la Transparence de la Vie Publique).
+Une galerie interactive qui présente, de manière claire et accessible, le patrimoine et les revenus des élu·e·s français·es à partir des données publiques de la HATVP (Haute Autorité pour la Transparence de la Vie Publique).
 
 ![Next.js](https://img.shields.io/badge/Next.js-14-black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.3-38bdf8)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-## ✨ Fonctionnalités
+## Ce que vous trouverez ici
 
-- 🔍 **Recherche en temps réel** - Filtrez par nom, fonction ou région
-- 📊 **Visualisations interactives** - Graphiques Recharts pour la composition du patrimoine
-- 🎨 **Design moderne** - Interface responsive avec animations Framer Motion
-- ⚡ **Performance optimale** - Next.js 14 App Router avec optimisations d'images
-- 📱 **Mobile-first** - Expérience fluide sur tous les appareils
+- Une recherche simple pour retrouver un·e élu·e par nom, fonction ou région.
+- Visualisations qui expliquent la composition du patrimoine (logements, placements, autres).
+- Une interface responsive pensée pour être lisible sur ordinateur et mobile.
+- Pages de profil détaillées pour chaque élu·e avec chiffres et graphiques.
 
-## 🚀 Démarrage Rapide
+## Prérequis et démarrage
 
-### Prérequis
-
-- Node.js 18+ 
+Prérequis :
+- Node.js (version récente)
 - npm ou yarn
-- Python 3.8+ (pour le scraping)
+- Python (pour le script de récupération des photos, si vous l'utilisez)
 
-### Installation
+Pour lancer le projet en local :
 
 ```bash
-# Cloner le repo
+# cloner le dépôt
 git clone https://github.com/votre-username/transparence-nationale.git
 cd transparence-nationale
 
-# Installer les dépendances
+# installer les dépendances
 npm install
 
-# Lancer le serveur de développement
+# lancer le serveur de développement
 npm run dev
 ```
 
-Ouvrez [http://localhost:3000](http://localhost:3000) dans votre navigateur.
+Ensuite, ouvrez http://localhost:3000 dans votre navigateur.
 
-## 📁 Structure du Projet
+## Structure du projet (vue d'ensemble)
 
-```
-transparence-nationale/
-├── src/
-│   ├── app/
-│   │   ├── layout.tsx           # Layout principal
-│   │   ├── page.tsx             # Page galerie
-│   │   ├── globals.css          # Styles globaux
-│   │   └── profils/[id]/
-│   │       └── page.tsx         # Page profil détaillé
-│   ├── components/
-│   │   ├── PersonCard.tsx       # Carte d'élu
-│   │   ├── PortfolioChart.tsx   # Graphique patrimoine
-│   │   └── SearchBar.tsx        # Barre de recherche + tri
-│   ├── hooks/
-│   │   └── useElus.ts           # Hook Zustand
-│   └── lib/
-│       └── types.ts             # Types TypeScript
-├── public/
-│   ├── data/
-│   │   └── elus.json            # Données élus
-│   └── photos/                   # Photos élus
-├── scripts/
-│   └── scrape-photos.py         # Script de scraping
-└── package.json
-```
+- src/app : pages et layout principaux
+- src/components : composants réutilisables (cartes, graphiques, barre de recherche)
+- src/hooks : gestion d'état
+- src/lib : types et petites utilitaires
+- public/data : données statiques (liste des élu·e·s)
+- public/photos : photos des élu·e·s (générées par le script)
+- scripts : scripts utiles (ex. récupération de photos)
 
-## 🔧 Technologies
+## Données et provenance
 
-### Frontend
-- **Framework**: Next.js 14 (App Router)
-- **Langage**: TypeScript 5
-- **Styling**: Tailwind CSS 3.3
-- **Animations**: Framer Motion
-- **Graphiques**: Recharts
-- **État**: Zustand
+Les informations affichées proviennent de sources publiques officielles :
+- HATVP (données déclaratives)
+- API de l'Assemblée nationale pour les photos et métadonnées
+- Wikipedia comme source de secours pour certaines images
 
-### Data
-- **Parsing**: PapaParse
-- **Source**: HATVP OpenData
-- **Photos**: API Assemblée Nationale + Wikipedia
+Le projet utilise des fichiers de données statiques pour l'affichage, et un script Python permet de télécharger les photos depuis les API indiquées.
 
-## 📊 Données
-
-Les données proviennent de sources officielles :
-
-1. **HATVP** : [https://www.hatvp.fr/livraison/opendata/liste.csv](https://www.hatvp.fr/livraison/opendata/liste.csv)
-2. **API Assemblée Nationale** : [https://data.assemblee-nationale.fr/api](https://data.assemblee-nationale.fr/api)
-3. **Wikipedia** (fallback photos)
-
-### Scraping des Photos
+Pour récupérer les photos :
 
 ```bash
-# Exécuter le script Python
 cd scripts
 python3 scrape-photos.py
 ```
 
-Le script :
-- Télécharge les photos depuis l'API Assemblée
-- Génère `/public/photos/*.jpg`
-- Crée une image placeholder
+Le script place les images dans public/photos.
 
-## 🎨 Composants Principaux
+## Composants principaux (résumé)
 
-### PersonCard
-Carte interactive avec hover animation affichant :
-- Photo de l'élu
-- Nom et fonction
-- Badges patrimoine/revenus
-- Lien vers profil détaillé
+- PersonCard : carte d'un·e élu·e avec photo, nom, fonction et indicateurs clés.
+- PortfolioChart : graphique montrant la répartition du patrimoine.
+- SearchBar : recherche et tri en temps réel.
 
-### PortfolioChart
-Graphique circulaire (Recharts) montrant :
-- Répartition Immobilier/Placements/Autres
-- Pourcentages et montants
-- Légende détaillée
+## Déploiement
 
-### SearchBar
-Barre de recherche avec :
-- Filtre temps réel
-- Tri par nom/patrimoine/revenus
-- Interface responsive
-
-## 🌐 Déploiement
-
-### Vercel (recommandé)
-
-1. Push sur GitHub
-2. Connectez votre repo à Vercel
-3. Déploiement automatique !
+Le projet se déploie facilement sur une plateforme d'hébergement comme Vercel. En local :
 
 ```bash
-# Build local
+# build
 npm run build
 
-# Start production
+# démarrer en production
 npm start
 ```
 
-### Variables d'Environnement
+Aucune variable d'environnement n'est nécessaire pour la version qui utilise uniquement des données statiques.
 
-Aucune variable requise ! 🎉  
-Le projet utilise uniquement des données statiques.
+## Scripts disponibles
 
-## 📝 Scripts Disponibles
+- npm run dev — serveur de développement
+- npm run build — build de production
+- npm start — serveur production
+- npm run lint — v��rification de code
+- npm run scrape — lancer le script de récupération des photos
 
-```bash
-npm run dev      # Serveur développement
-npm run build    # Build production
-npm start        # Serveur production
-npm run lint     # Linter ESLint
-npm run scrape   # Lancer le scraping Python
-```
+## Contribution
 
-## 🤝 Contribution
+Les contributions sont bienvenues. Si vous souhaitez aider :
 
-Les contributions sont les bienvenues !
+1. Forkez le projet.
+2. Créez une branche pour votre fonctionnalité.
+3. Faites vos changements et commitez.
+4. Poussez votre branche et ouvrez une pull request.
 
-1. Fork le projet
-2. Créez une branche (`git checkout -b feature/AmazingFeature`)
-3. Commit vos changements (`git commit -m 'Add AmazingFeature'`)
-4. Push vers la branche (`git push origin feature/AmazingFeature`)
-5. Ouvrez une Pull Request
+Merci d'expliquer brièvement le but de vos changements et, si nécessaire, de fournir des exemples ou captures d'écran.
 
-## 📄 Licence
+## Licence
 
-Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
+Ce projet est publié sous licence MIT. Voir le fichier LICENSE pour les détails.
 
-## 🎯 Roadmap
+## Prochaines étapes envisagées
 
-- [ ] Timeline historique des mandats
-- [ ] Comparateur de patrimoine (2 élus)
-- [ ] Dark mode
-- [ ] Export PDF/CSV
-- [ ] Statistiques globales
-- [ ] Graphiques d'évolution temporelle
-- [ ] API publique
+Parmi les améliorations possibles :
+- Historique des mandats
+- Comparateur entre deux élu·e·s
+- Mode sombre
+- Export PDF/CSV
+- Statistiques globales et graphiques d'évolution
 
-## 🙏 Remerciements
+## Remarques légales et confidentialité
 
-- **HATVP** pour les données publiques
-- **Assemblée Nationale** pour l'API
-- **Next.js** et **Vercel** pour l'infrastructure
-- La communauté open-source
+Les informations présentées proviennent de déclarations publiques déposées auprès d'organismes officiels. Ce projet vise la transparence et l'information ; il n'a pas d'objectif commercial. Seules des données publiques et légalement accessibles sont utilisées.
 
-## 📞 Contact
-
-Pour toute question ou suggestion :
-- Ouvrez une [issue](https://github.com/votre-username/transparence-nationale/issues)
-- Twitter: [@votre-handle](https://twitter.com/votre-handle)
-
----
-
-**⚖️ Note légale** : Ce projet utilise des données publiques à des fins de transparence démocratique. Les informations affichées proviennent de déclarations officielles déposées auprès de la HATVP.
-
-**🔐 Vie privée** : Seules les données publiques légalement accessibles sont utilisées.
+Si vous avez des questions ou des suggestions, ouvrez une issue sur le dépôt.
