@@ -2,23 +2,20 @@
 """
 Script de génération des données des élus français.
 Sources:
-  - HATVP open data (data.gouv.fr) → CSV officiel liste des déclarants
-  - HATVP CSV direct (hatvp.fr/livraison) → fallback
-  - API HATVP fiche individuelle → déclarations détaillées (placements/actifs)
-  - API Assemblée Nationale (nosdeputes.fr / open data AN) → id_an, circonscription
+  - HATVP open data XML (hatvp.fr/livraison/opendata/declarations.xml) → source primaire officielle
+  - HATVP XML index (hatvp.fr/livraison/opendata/liste.xml)            → fallback léger
+  - API HATVP fiche individuelle JSON                                   → enrichissement si besoin
+  - API Assemblée Nationale (nosdeputes.fr / open data AN)             → id_an, circonscription
 
 Génère: public/data/elus.json
 
-NOTE sur l'API HATVP REST :
-  L'endpoint /rest/api/declarations/list n'est plus disponible publiquement.
-  On s'appuie désormais sur les exports open data officiels (CSV) disponibles
-  sur data.gouv.fr et hatvp.fr/livraison, qui sont les sources canoniques.
-  Les fiches individuelles JSON (par hatvp_id) restent tentées pour enrichissement.
+NOTE :
+  Le CSV open data HATVP est remplacé par l'export XML officiel, qui est
+  la source canonique la plus complète (patrimoine, immobilier, placements).
+  Aucune dépendance tierce n'est requise (xml.etree.ElementTree est stdlib).
 """
 
 import argparse
-import csv
-import io
 import json
 import os
 import sys
@@ -27,34 +24,27 @@ import unicodedata
 import urllib.request
 import urllib.parse
 import urllib.error
+import xml.etree.ElementTree as ET
 
 # Chemins relatifs depuis la racine du projet
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 DEFAULT_OUTPUT = os.path.join(PROJECT_ROOT, "public", "data", "elus.json")
 
-# ── Sources HATVP ─────────────────────────────────────────────────────────────
-# CSV officiel HATVP – export open data (source primaire, stable)
-# Disponible via data.gouv.fr et directement sur hatvp.fr
-HATVP_DATAGOUV_CSV = (
-    "https://www.data.gouv.fr/fr/datasets/r/"
-    "b6ca8b0e-b9f3-4b80-97f4-f547bfe55e60"  # dataset HATVP liste déclarants
-)
-# CSV direct hatvp.fr (fallback si data.gouv.fr indisponible)
-HATVP_CSV_URL = "https://www.hatvp.fr/livraison/opendata/liste.csv"
+# ── Sources HATVP XML ────────────────────────────────────────────────────────
+# Export XML complet HATVP (déclarations de patrimoine et d'intérêts)
+HATVP_XML_FULL_URL = "https://www.hatvp.fr/livraison/opendata/declarations.xml"
+# Index XML allégé (liste des déclarants) — fallback
+HATVP_XML_LISTE_URL = "https://www.hatvp.fr/livraison/opendata/liste.xml"
 
-# API HATVP fiche individuelle (enrichissement patrimoine/placements)
-# ⚠ Tentative : l'endpoint varie selon les versions du portail HATVP.
-# On tente plusieurs variantes.
+# API HATVP fiche individuelle (enrichissement — tentée si hatvp_id connu)
 HATVP_API_DECLARATION_VARIANTS = [
     "https://www.hatvp.fr/rest/api/declarations/{hatvp_id}",
     "https://www.hatvp.fr/livraison/opendata/declarations/{hatvp_id}.json",
 ]
 
-# ── Sources Assemblée Nationale ────────────────────────────────���──────────────
-# nosdeputes.fr : données AN remixées, JSON propre et stable
+# ── Sources Assemblée Nationale ──────────────────────────────────────────────
 NOSDEPUTES_DEPUTES_URL = "https://www.nosdeputes.fr/deputes/json"
-# API open data AN (fallback)
 AN_OPENDATA_URL = "https://data.assemblee-nationale.fr/api/v2/deputes/json"
 
 # Indemnités parlementaires de base (brut annuel)
@@ -63,7 +53,7 @@ INDEMNITE_SENATEUR = 87_480
 
 HEADERS = {
     "User-Agent": "TransparenceNationale/1.0 (https://github.com/transparence-nationale)",
-    "Accept": "application/json, text/csv, */*",
+    "Accept": "application/xml, application/json, */*",
 }
 
 # ── Types d'actifs HATVP reconnus comme "placements" ─────────────────────────
@@ -82,6 +72,12 @@ PLACEMENT_CATEGORIES = {
     "crowdfunding": "Crowdfunding / Financement participatif",
 }
 
+# Tags XML HATVP susceptibles de contenir des actifs financiers
+PLACEMENT_XML_TAGS = {
+    "valeursMobilieres", "assuranceVie", "epargne", "partsSociales",
+    "instrumentsFinanciers", "actions", "obligations", "opcvm", "pea",
+    "compteTitres", "autresBiensFinanciers", "autresBiensMobiliers",
+}
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Utilitaires
@@ -89,42 +85,38 @@ PLACEMENT_CATEGORIES = {
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Génère public/data/elus.json depuis HATVP (CSV open data) + API AN."
+        description="Génère public/data/elus.json depuis HATVP (XML open data) + API AN."
     )
     parser.add_argument(
-        "--output",
-        default=DEFAULT_OUTPUT,
+        "--output", default=DEFAULT_OUTPUT,
         help=f"Chemin de sortie (défaut : {DEFAULT_OUTPUT})",
     )
     parser.add_argument(
-        "--limit",
-        type=int,
-        default=None,
+        "--limit", type=int, default=None,
         help="Limiter le nombre d'élus générés (utile pour les tests)",
     )
     parser.add_argument(
-        "--no-detail",
-        action="store_true",
+        "--no-detail", action="store_true",
         help="Ne pas appeler l'API HATVP individuelle (plus rapide, moins de données)",
     )
     parser.add_argument(
-        "--delay",
-        type=float,
-        default=0.3,
+        "--delay", type=float, default=0.3,
         help="Délai entre requêtes détaillées HATVP en secondes (défaut : 0.3)",
     )
     return parser.parse_args()
+
 
 def slugify(text: str) -> str:
     """Convertir un nom en slug ASCII minuscule."""
     text = text.lower().strip()
     text = unicodedata.normalize("NFD", text)
     text = "".join(c for c in text if unicodedata.category(c) != "Mn")
-    text = text.replace(" ", "-").replace("'", "-").replace("\u2019", "-").replace("\"", "-")
+    text = text.replace(" ", "-").replace("'", "-").replace("\u2019", "-").replace('"', "-")
     text = "".join(c for c in text if c.isalnum() or c == "-")
     while "--" in text:
         text = text.replace("--", "-")
     return text.strip("-")
+
 
 def normalize_name(name: str) -> str:
     """Normaliser un nom pour la comparaison (sans accents, minuscules, sans tirets)."""
@@ -132,20 +124,10 @@ def normalize_name(name: str) -> str:
     name = unicodedata.normalize("NFD", name)
     name = "".join(c for c in name if unicodedata.category(c) != "Mn")
     name = name.replace("-", " ").replace("'", " ").replace("\u2019", " ")
-    name = " ".join(name.split())
-    return name
+    return " ".join(name.split())
 
-def make_dedup_key(nom: str, prenom: str, hatvp_id: str = "") -> tuple:
-    """
-    Clé de déduplication robuste.
-    Utilise l'id HATVP si disponible (plus fiable que le slug nom+prénom
-    qui peut collisionner sur les homonymes ou varier selon les accents).
-    """
-    if hatvp_id:
-        return ("hatvp_id", hatvp_id)
-    return ("name", normalize_name(nom), normalize_name(prenom))
 
-def http_get(url: str, timeout: int = 30) -> bytes | None:
+def http_get(url: str, timeout: int = 60) -> bytes | None:
     """Effectuer une requête GET et retourner le contenu brut, ou None."""
     req = urllib.request.Request(url, headers=HEADERS)
     try:
@@ -158,97 +140,224 @@ def http_get(url: str, timeout: int = 30) -> bytes | None:
         print(f"  ⚠ Erreur réseau ({url}) : {exc}")
     return None
 
+
 def parse_amount(val) -> int:
     """Parser un montant financier (str ou number) en entier."""
     if val is None:
         return 0
     if isinstance(val, (int, float)):
         return int(val)
-    val = str(val).strip().replace("\u202f", "").replace("\xa0", "")
-    val = val.replace(" ", "").replace(",", ".").replace("€", "").replace("EUR", "")
+    val = str(val).strip()
+    for ch in ("\u202f", "\xa0", " ", ",", "€", "EUR"):
+        val = val.replace(ch, "" if ch not in (",",) else ".")
+    val = val.replace(",", ".")
     try:
         return int(float(val))
     except (ValueError, TypeError):
         return 0
 
-def decode_csv_bytes(raw: bytes) -> str | None:
-    """Décoder des bytes CSV avec détection d'encodage."""
-    for encoding in ("utf-8-sig", "utf-8", "latin-1", "cp1252"):
-        try:
-            return raw.decode(encoding)
-        except UnicodeDecodeError:
-            continue
-    return None
+
+def _xml_text(elem, *tags, default: str = "") -> str:
+    """Chercher récursivement le texte d'un sous-élément parmi plusieurs tags."""
+    for tag in tags:
+        child = elem.find(".//" + tag)
+        if child is not None and child.text and child.text.strip():
+            return child.text.strip()
+    return default
+
+
+def _xml_int(elem, *tags) -> int:
+    return parse_amount(_xml_text(elem, *tags))
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Récupération HATVP (CSV open data — source primaire)
+# Récupération HATVP — XML open data (source primaire)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def fetch_hatvp_csv_from_url(url: str, label: str) -> list[dict]:
-    """Télécharger et parser un CSV HATVP depuis une URL donnée."""
-    print(f"🔄 Téléchargement du CSV HATVP ({label})…")
-    raw = http_get(url)
+def fetch_xml(url: str, label: str) -> ET.Element | None:
+    """Télécharger et parser un fichier XML depuis une URL."""
+    print(f"🔄 Téléchargement XML HATVP ({label})…")
+    raw = http_get(url, timeout=120)
     if not raw:
         print(f"  ✗ Impossible de télécharger : {url}")
-        return []
+        return None
+    try:
+        root = ET.fromstring(raw)
+        print(f"  ✓ XML parsé ({len(raw):,} octets) depuis {label}")
+        return root
+    except ET.ParseError as exc:
+        print(f"  ✗ Erreur de parsing XML ({label}) : {exc}")
+        return None
 
-    text = decode_csv_bytes(raw)
-    if not text:
-        print(f"  ✗ Impossible de décoder le CSV depuis {url}")
-        return []
 
-    # Détecter le délimiteur (point-virgule ou virgule)
-    sample = text[:2000]
-    delimiter = ";" if sample.count(";") > sample.count(",") else ","
-
-    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
-    rows = list(reader)
-    print(f"  ✓ {len(rows)} entrées depuis {label}")
-    return rows
-
-def fetch_hatvp_data() -> list[dict]:
+def fetch_hatvp_xml() -> ET.Element | None:
     """
-    Récupérer la liste des déclarants HATVP.
-    Stratégie (CSV open data uniquement, l'API REST /list n'est plus disponible) :
-      1. data.gouv.fr (export officiel HATVP, le plus à jour)
-      2. hatvp.fr/livraison directement (fallback)
-    Retourne une liste de dicts (lignes CSV).
+    Récupérer le XML HATVP.
+    Stratégie :
+      1. Export complet declarations.xml (patrimoine + intérêts)
+      2. Index liste.xml (fallback allégé)
     """
-    # Tentative 1 : data.gouv.fr
-    rows = fetch_hatvp_csv_from_url(HATVP_DATAGOUV_CSV, "data.gouv.fr")
-    if rows:
-        return rows
+    root = fetch_xml(HATVP_XML_FULL_URL, "declarations.xml (complet)")
+    if root is not None:
+        return root
+    root = fetch_xml(HATVP_XML_LISTE_URL, "liste.xml (fallback)")
+    return root
 
-    # Tentative 2 : hatvp.fr direct
-    rows = fetch_hatvp_csv_from_url(HATVP_CSV_URL, "hatvp.fr/livraison")
-    if rows:
-        return rows
 
-    print("  ✗ Aucune source HATVP disponible")
-    return []
+def _extract_placements_from_xml(decl_elem: ET.Element) -> tuple[int, list[dict]]:
+    """
+    Extraire les placements financiers d'un élément XML de déclaration HATVP.
+    Retourne (montant_total, liste_placements).
+    """
+    placements: list[dict] = []
+    seen: set[tuple] = set()
+
+    for tag, label in [
+        ("valeursMobilieres",     "Valeurs mobilières"),
+        ("assuranceVie",          "Assurance-vie"),
+        ("epargne",               "Épargne"),
+        ("partsSociales",         "Parts sociales"),
+        ("instrumentsFinanciers", "Instruments financiers"),
+        ("actions",               "Actions"),
+        ("obligations",           "Obligations"),
+        ("opcvm",                 "OPCVM / Fonds"),
+        ("pea",                   "PEA"),
+        ("compteTitres",          "Compte-titres"),
+        ("autresBiensFinanciers", "Autres placements"),
+        ("autresBiensMobiliers",  "Autres placements"),
+    ]:
+        for item in decl_elem.findall(f".//{tag}"):
+            # Libellé
+            libelle = (
+                _xml_text(item, "denomination", "libelle", "societe", "emetteur",
+                          "description", "objet", "nature")
+                or label
+            )
+            # Montant
+            montant = _xml_int(
+                item, "valeurEstimee", "valeurVenale", "montant",
+                "montantTotal", "valeur", "solde"
+            )
+            devise_el = item.find(".//devise")
+            devise = (devise_el.text.strip().upper() if devise_el is not None and devise_el.text else "EUR")
+            details_el = item.find(".//observations")
+            details = (details_el.text.strip() if details_el is not None and details_el.text else "")
+
+            dedup_key = (libelle.lower(), montant, label)
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+            placements.append({
+                "type": label,
+                "libelle": libelle,
+                "montant": montant,
+                "devise": devise,
+                "details": details,
+            })
+
+    total = sum(p["montant"] for p in placements)
+    return total, placements
+
+
+def parse_hatvp_xml(root: ET.Element) -> list[dict]:
+    """
+    Convertir un arbre XML HATVP en liste de dicts bruts (un par déclarant).
+    Supporte les deux formats courants :
+      - <declarations><declaration>…</declaration></declarations>
+      - <declarants><declarant>…</declarant></declarants>
+    """
+    # Chercher les éléments déclaration / declarant
+    records: list[ET.Element] = (
+        root.findall(".//declaration")
+        or root.findall(".//declarant")
+        or root.findall(".//Declarant")
+        or list(root)  # dernier recours : enfants directs
+    )
+
+    print(f"  ✓ {len(records)} enregistrements trouvés dans le XML")
+
+    results: list[dict] = []
+    for rec in records:
+        # ── Identité ───────────────────────────────────────────────────────���─
+        nom = (
+            _xml_text(rec, "nom", "lastName", "NOM", "nomUsuel")
+        ).upper()
+        prenom = (
+            _xml_text(rec, "prenom", "prénom", "prenomUsuel", "firstName", "PRENOM")
+        ).title()
+        if not nom or not prenom:
+            continue
+
+        hatvp_id = _xml_text(rec, "id", "hatvpId", "identifiant", "declarantId", "uid")
+        fonction_raw = _xml_text(
+            rec, "fonction", "mandat", "qualite", "Fonction", "Mandat",
+            "titreMandat", "libelleFonction"
+        )
+        parti = _xml_text(rec, "parti", "groupe", "formationPolitique", "groupePolitique")
+        region = _xml_text(
+            rec, "circonscription", "region", "departement",
+            "libellCirconscription", "nomCirco"
+        )
+
+        # ── Patrimoine agrégé ────────────────────────────────────────────────
+        patrimoine_total = _xml_int(
+            rec, "totalPatrimoine", "patrimoineTotal", "montantTotal",
+            "totalBiens", "valeurTotalePatrimoine"
+        )
+        immobilier_total = _xml_int(
+            rec, "totalImmobilier", "bienImmobilierTotal",
+            "valeurTotaleImmobilier", "totalBiensImmobiliers"
+        )
+
+        # Immobilier détaillé (somme des biens immobiliers listés)
+        if not immobilier_total:
+            immobilier_total = sum(
+                _xml_int(b, "valeurVenale", "valeurEstimee", "montant", "valeur")
+                for b in rec.findall(".//bienImmobilier")
+            )
+
+        # ── Placements ───────────────────────────────────────────────────────
+        placements_total, placements_list = _extract_placements_from_xml(rec)
+
+        results.append({
+            "nom": nom,
+            "prenom": prenom,
+            "hatvp_id": hatvp_id,
+            "fonction_raw": fonction_raw,
+            "parti": parti,
+            "region": region,
+            "patrimoine_total": patrimoine_total,
+            "immobilier_total": immobilier_total,
+            "placements_total": placements_total,
+            "placements_list": placements_list,
+        })
+
+    return results
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Enrichissement individuel HATVP (JSON)
+# ══════════════════════════════════════════════════════════════════════════════
 
 def fetch_hatvp_declaration_detail(hatvp_id: str) -> dict | None:
-    """Récupérer la fiche complète d'un déclarant (placements, patrimoine…)."""
+    """Récupérer la fiche complète d'un déclarant (JSON individuel)."""
     for url_tpl in HATVP_API_DECLARATION_VARIANTS:
         url = url_tpl.format(hatvp_id=hatvp_id)
         raw = http_get(url, timeout=30)
         if not raw:
             continue
         try:
-            data = json.loads(raw.decode("utf-8"))
-            return data
+            return json.loads(raw.decode("utf-8"))
         except Exception:
             continue
     return None
 
 
-def extract_placements_from_detail(detail: dict) -> tuple[int, list[dict]]:
-    """Extraire les placements détaillés d'une fiche HATVP complète.
-    Retourne : (montant_total_placements, liste_placements)"""
-    placements = []
+def _extract_placements_from_json(detail: dict) -> tuple[int, list[dict]]:
+    """Extraire les placements d'une fiche JSON HATVP individuelle."""
+    placements: list[dict] = []
 
     def _walk(node, depth=0):
-        if depth > 20:  # éviter les récursions infinies sur des structures cycliques
+        if depth > 20:
             return
         if isinstance(node, list):
             for item in node:
@@ -259,28 +368,21 @@ def extract_placements_from_detail(detail: dict) -> tuple[int, list[dict]]:
                 node.get("nature") or node.get("categorie") or
                 node.get("libelle_categorie") or ""
             ).lower()
-
             libelle = (
                 node.get("libelle") or node.get("denomination") or
                 node.get("societe") or node.get("emetteur") or
                 node.get("description") or node.get("objet") or ""
             ).strip()
-
             montant_raw = (
                 node.get("valeurEstimee") or node.get("valeur_estimee") or
                 node.get("montant") or node.get("valeur") or
                 node.get("montantTotal") or node.get("montant_total") or
                 node.get("valeurVenale") or None
             )
-
-            devise = node.get("devise", "EUR") or "EUR"
+            devise = (node.get("devise", "EUR") or "EUR").upper()
             details = (node.get("details") or node.get("observations") or "").strip()
 
-            is_placement = False
-            for key in PLACEMENT_CATEGORIES:
-                if key in type_actif or type_actif in key:
-                    is_placement = True
-                    break
+            is_placement = any(k in type_actif or type_actif in k for k in PLACEMENT_CATEGORIES)
             if not is_placement and montant_raw and libelle and any(
                 kw in type_actif for kw in [
                     "action", "obligation", "part", "titre", "fonds",
@@ -300,7 +402,7 @@ def extract_placements_from_detail(detail: dict) -> tuple[int, list[dict]]:
                     "type": type_norm,
                     "libelle": libelle or type_norm,
                     "montant": parse_amount(montant_raw),
-                    "devise": devise.upper(),
+                    "devise": devise,
                     "details": details,
                 })
 
@@ -310,7 +412,6 @@ def extract_placements_from_detail(detail: dict) -> tuple[int, list[dict]]:
 
     _walk(detail)
 
-    # Dédupliquer (même libellé + montant + type)
     seen: set[tuple] = set()
     unique: list[dict] = []
     for p in placements:
@@ -319,8 +420,8 @@ def extract_placements_from_detail(detail: dict) -> tuple[int, list[dict]]:
             seen.add(key)
             unique.append(p)
 
-    total = sum(p["montant"] for p in unique)
-    return total, unique
+    return sum(p["montant"] for p in unique), unique
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Récupération Assemblée Nationale
@@ -332,13 +433,11 @@ def fetch_an_deputes() -> dict[str, dict]:
     print("🔄 Récupération des députés (nosdeputes.fr)…")
     deputes: dict[str, dict] = {}
 
-    # Tentative 1 : nosdeputes.fr
     raw = http_get(NOSDEPUTES_DEPUTES_URL)
     if raw:
         try:
             result = json.loads(raw.decode("utf-8"))
-            items = result.get("deputes", [])
-            for item in items:
+            for item in result.get("deputes", []):
                 dep = item.get("depute", item)
                 prenom = (dep.get("prenom") or dep.get("prenom_usuel") or "").strip()
                 nom = (dep.get("nom") or dep.get("nom_de_famille") or "").strip()
@@ -351,19 +450,15 @@ def fetch_an_deputes() -> dict[str, dict]:
                     else dep.get("groupe_sigle", "")
                 ).strip()
                 if prenom and nom:
-                    key = slugify(f"{prenom} {nom}")
-                    deputes[key] = {
-                        "id_an": id_an,
-                        "slug_an": slug_an,
-                        "region": region,
-                        "groupe": groupe,
+                    deputes[slugify(f"{prenom} {nom}")] = {
+                        "id_an": id_an, "slug_an": slug_an,
+                        "region": region, "groupe": groupe,
                     }
             print(f"  ✓ {len(deputes)} députés depuis nosdeputes.fr")
             return deputes
         except Exception as exc:
             print(f"  ⚠ Parsing nosdeputes.fr : {exc}")
 
-    # Tentative 2 : open data AN
     print("  ↩ Fallback : API open data Assemblée Nationale…")
     raw = http_get(AN_OPENDATA_URL)
     if not raw:
@@ -372,8 +467,7 @@ def fetch_an_deputes() -> dict[str, dict]:
 
     try:
         result = json.loads(raw.decode("utf-8"))
-        items = result.get("deputes", [])
-        for item in items:
+        for item in result.get("deputes", []):
             dep = item.get("depute", item)
             prenom = (dep.get("prenom") or dep.get("prenom_usuel") or "").strip()
             nom = (dep.get("nom") or dep.get("nom_de_famille") or "").strip()
@@ -387,66 +481,28 @@ def fetch_an_deputes() -> dict[str, dict]:
                         region = mandat.get("libelle", "")
                         break
             if prenom and nom:
-                key = slugify(f"{prenom} {nom}")
-                deputes[key] = {"id_an": id_an, "slug_an": "", "region": region, "groupe": ""}
+                deputes[slugify(f"{prenom} {nom}")] = {
+                    "id_an": id_an, "slug_an": "", "region": region, "groupe": "",
+                }
         print(f"  ✓ {len(deputes)} députés depuis l'API AN (fallback)")
     except Exception as exc:
         print(f"  ⚠ Parsing API AN : {exc}")
 
     return deputes
 
+
+# ═════════════════════���════════════════════════════════════════════════════════
+# Conversion enregistrement HATVP → élu
 # ══════════════════════════════════════════════════════════════════════════════
-# Conversion ligne CSV → élu
-# ══════════════════════════════════════════════════════════════════════════════
 
-def _get_field(row: dict, *keys: str, default: str = "") -> str:
-    """Chercher une valeur dans un dict en testant plusieurs clés (insensible à la casse)."""
-    row_lower = {k.lower(): v for k, v in row.items()}
-    for key in keys:
-        v = row_lower.get(key.lower(), "")
-        if v and str(v).strip():
-            return str(v).strip()
-    return default
+def hatvp_record_to_elu(record: dict, an_map: dict[str, dict]) -> dict | None:
+    """Convertir un enregistrement HATVP parsé en structure élu."""
+    nom = record["nom"]
+    prenom = record["prenom"]
+    hatvp_id = record.get("hatvp_id", "")
+    fonction_raw = record.get("fonction_raw", "")
+    parti = record.get("parti", "")
 
-
-def hatvp_csv_row_to_elu(row: dict, an_map: dict[str, dict]) -> dict | None:
-    """Convertir une ligne CSV HATVP en structure élu."""
-    nom = _get_field(row, "nom", "lastName", "last_name", "NOM").upper()
-    prenom = _get_field(row, "prenom", "prénom", "prenom_usuel", "firstName", "PRENOM").title()
-
-    if not nom or not prenom:
-        return None
-
-    hatvp_id = _get_field(row, "id", "hatvp_id", "identifiant", "ID")
-    fonction_raw = _get_field(row, "fonction", "Fonction", "mandat", "Mandat", "qualite", "role")
-    parti = _get_field(row, "parti", "Parti", "groupe", "formation_politique")
-
-    elu = _build_elu(nom, prenom, hatvp_id, fonction_raw, parti, an_map)
-    if elu is None:
-        return None
-
-    # Données patrimoniales agrégées depuis le CSV
-    pat_val = _get_field(row, "total_patrimoine", "patrimoine_total", "Patrimoine total", "montant_total")
-    if pat_val:
-        elu["patrimoine"] = parse_amount(pat_val)
-        elu["patrimoine_source"] = "hatvp_csv"
-
-    immo_val = _get_field(row, "total_immobilier", "immobilier", "Immobilier")
-    if immo_val:
-        elu["immobilier"] = parse_amount(immo_val)
-
-    place_val = _get_field(row, "total_placements", "placements", "Placements")
-    if place_val:
-        elu["placements_montant"] = parse_amount(place_val)
-
-    return elu
-
-
-def _build_elu(
-    nom: str, prenom: str, hatvp_id: str, fonction_raw: str,
-    parti: str, an_map: dict[str, dict]
-) -> dict | None:
-    """Construire le dict élu commun."""
     elu_id = slugify(f"{prenom} {nom}")
     if not elu_id:
         return None
@@ -454,39 +510,50 @@ def _build_elu(
     an_info = an_map.get(elu_id, {})
     id_an = an_info.get("id_an", "")
     slug_an = an_info.get("slug_an", "")
-    region = an_info.get("region", "")
+    # Priorité région : XML HATVP > nosdeputes.fr
+    region = record.get("region", "") or an_info.get("region", "")
     groupe = an_info.get("groupe", "")
 
     revenus = INDEMNITE_DEPUTE
-    mandats = []
+    mandats: list[str] = []
     fonction = fonction_raw or "Élu(e)"
-    fonction_lower = fonction_raw.lower()
+    fl = fonction_raw.lower()
 
-    if "sénateur" in fonction_lower or "sénatrice" in fonction_lower:
+    if "sénateur" in fl or "sénatrice" in fl:
         revenus = INDEMNITE_SENATEUR
         mandats = ["Sénateur(trice)"]
         if not fonction_raw:
             fonction = "Sénateur(trice)"
-    elif "député" in fonction_lower or "députée" in fonction_lower:
+    elif "député" in fl or "députée" in fl:
         mandats = ["Député(e)"]
-        if region and "de" not in fonction_lower:
+        if region and "de" not in fl:
             fonction = f"Député(e) de {region}"
-    elif "ministre" in fonction_lower:
+    elif "ministre" in fl:
         mandats = [fonction_raw]
         revenus = 0
     else:
         mandats = [fonction_raw] if fonction_raw else ["Élu(e)"]
 
-    # URLs
     hatvp_url = (
         f"https://www.hatvp.fr/fiche-nominative/?declarant="
-        f"{urllib.parse.quote(f'{nom}-{prenom}') }"
+        f"{urllib.parse.quote(f'{nom}-{prenom}')}"
     )
     an_url = ""
     if id_an:
         an_url = f"https://www.assemblee-nationale.fr/dyn/deputes/{id_an}"
     elif slug_an:
         an_url = f"https://www.nosdeputes.fr/{slug_an}"
+
+    patrimoine = record.get("patrimoine_total", 0)
+    immobilier = record.get("immobilier_total", 0)
+    placements_montant = record.get("placements_total", 0)
+    placements_list = record.get("placements_list", [])
+    patrimoine_source = "hatvp_xml" if patrimoine else "non_disponible"
+
+    # Patrimoine estimé si non fourni explicitement
+    if not patrimoine and (immobilier or placements_montant):
+        patrimoine = immobilier + placements_montant
+        patrimoine_source = "hatvp_xml_partiel"
 
     return {
         "id": elu_id,
@@ -496,11 +563,11 @@ def _build_elu(
         "region": region,
         "groupe": groupe,
         "revenus": revenus,
-        "patrimoine": 0,
-        "immobilier": 0,
-        "placements_montant": 0,
-        "placements": [],
-        "patrimoine_source": "non_disponible",
+        "patrimoine": patrimoine,
+        "immobilier": immobilier,
+        "placements_montant": placements_montant,
+        "placements": placements_list,
+        "patrimoine_source": patrimoine_source,
         "mandats": mandats,
         "parti": parti or groupe,
         "hatvp_id": hatvp_id,
@@ -515,8 +582,8 @@ def _build_elu(
     }
 
 
-def enrich_with_detail(elu: dict, delay: float) -> None:
-    """Enrichir un élu avec les données détaillées de l'API HATVP (modifie en place)."""
+def enrich_with_json_detail(elu: dict, delay: float) -> None:
+    """Enrichir un élu avec les données JSON individuelles HATVP (modifie en place)."""
     hatvp_id = elu.get("hatvp_id", "")
     if not hatvp_id:
         return
@@ -541,10 +608,13 @@ def enrich_with_detail(elu: dict, delay: float) -> None:
     if immo_raw:
         elu["immobilier"] = (
             parse_amount(immo_raw) if not isinstance(immo_raw, list)
-            else sum(parse_amount(b.get("valeurVenale") or b.get("valeur") or 0) for b in immo_raw)
+            else sum(
+                parse_amount(b.get("valeurVenale") or b.get("valeur") or 0)
+                for b in immo_raw
+            )
         )
 
-    total_place, placements_list = extract_placements_from_detail(detail)
+    total_place, placements_list = _extract_placements_from_json(detail)
     if placements_list:
         elu["placements"] = placements_list
         elu["placements_montant"] = total_place
@@ -552,26 +622,18 @@ def enrich_with_detail(elu: dict, delay: float) -> None:
             elu["patrimoine"] = elu.get("immobilier", 0) + total_place
             elu["patrimoine_source"] = "hatvp_api_partiel"
 
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Déduplication et fusion
 # ══════════════════════════════════════════════════════════════════════════════
 
 def deduplicate_elus(elus: list[dict]) -> list[dict]:
-    """
-    Dédupliquer une liste d'élus.
-    Stratégie (par ordre de priorité) :
-      1. hatvp_id identique → même personne, garder le plus complet
-      2. (nom_normalisé, prenom_normalisé) identique ET hatvp_id vide → fusionner
-    """
-    # Index par hatvp_id (si non vide)
+    """Dédupliquer une liste d'élus (par hatvp_id puis par (nom, prénom))."""
     by_hatvp_id: dict[str, dict] = {}
-    # Index par (nom_norm, prenom_norm) pour ceux sans hatvp_id
     by_name: dict[tuple, dict] = {}
-    result_order: list[str] = []  # pour préserver l'ordre
-    slug_map: dict[str, dict] = {}  # slug → elu final
+    result_order: list[str] = []
 
     def _merge_into(base: dict, other: dict) -> None:
-        """Fusionner `other` dans `base` (base a la priorité sur les champs non nuls)."""
         for key, value in other.items():
             if key == "liens" and isinstance(value, dict):
                 for lk, lv in value.items():
@@ -593,50 +655,36 @@ def deduplicate_elus(elus: list[dict]) -> list[dict]:
         if hatvp_id:
             if hatvp_id in by_hatvp_id:
                 _merge_into(by_hatvp_id[hatvp_id], elu)
-                continue
             else:
                 by_hatvp_id[hatvp_id] = elu
-                slug_map[elu["id"]] = elu
-                result_order.append(hatvp_id)
+                result_order.append(("hatvp_id", hatvp_id))
         else:
             name_key = (nom_norm, prenom_norm)
             if name_key in by_name:
                 _merge_into(by_name[name_key], elu)
-                continue
             else:
                 by_name[name_key] = elu
-                slug_map[elu["id"]] = elu
-                result_order.append(f"__name__{nom_norm}__{prenom_norm}")
+                result_order.append(("name", nom_norm, prenom_norm))
 
-    # Reconstruire la liste dans l'ordre d'insertion
-    seen_keys: set[str] = set()
     final: list[dict] = []
+    seen: set = set()
     for key in result_order:
-        if key in seen_keys:
+        k = str(key)
+        if k in seen:
             continue
-        seen_keys.add(key)
-        if key.startswith("__name__"):
-            _, nom_norm, prenom_norm = key.split("__name__")[1].split("__", 1) if "__name__" in key else ("", "", "")
-            # On reconstruit la clé proprement
-            parts = key[len("__name__") :].split("__")
-            if len(parts) == 2:
-                elu = by_name.get((parts[0], parts[1]))
-                if elu:
-                    final.append(elu)
+        seen.add(k)
+        if key[0] == "hatvp_id":
+            elu = by_hatvp_id.get(key[1])
         else:
-            elu = by_hatvp_id.get(key)
-            if elu:
-                final.append(elu)
+            elu = by_name.get((key[1], key[2]))
+        if elu:
+            final.append(elu)
 
     return final
 
 
 def merge_with_existing(new_elus: list[dict], existing_elus: list[dict]) -> list[dict]:
-    """
-    Fusionner les nouveaux élus avec les existants.
-    Priorité : nouvelles données > existantes (sauf placements détaillés existants).
-    """
-    # Index existants par hatvp_id puis par slug
+    """Fusionner les nouveaux élus avec les existants."""
     existing_by_hatvp: dict[str, dict] = {}
     existing_by_slug: dict[str, dict] = {}
     for e in existing_elus:
@@ -650,8 +698,6 @@ def merge_with_existing(new_elus: list[dict], existing_elus: list[dict]) -> list
     for elu in new_elus:
         eid = elu.get("id", "")
         hid = elu.get("hatvp_id", "").strip()
-
-        # Chercher l'existant par hatvp_id d'abord, puis par slug
         existing = existing_by_hatvp.get(hid) if hid else existing_by_slug.get(eid)
 
         if existing:
@@ -673,7 +719,8 @@ def merge_with_existing(new_elus: list[dict], existing_elus: list[dict]) -> list
 
     return list(result_map.values())
 
-# ══════════════════════════════════════════════════════════════════════════════
+
+# ═════════════════════════════════���════════════════════════════════════════════
 # Main
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -682,7 +729,7 @@ def main():
 
     print("=" * 60)
     print("🗳️  GÉNÉRATEUR DE DONNÉES ÉLUS FRANÇAIS")
-    print("   Source HATVP : CSV open data (data.gouv.fr / hatvp.fr)")
+    print("   Source HATVP : XML open data officiel (hatvp.fr/livraison)")
     print("=" * 60)
 
     # Charger les données existantes
@@ -699,20 +746,25 @@ def main():
     an_map = fetch_an_deputes()
     time.sleep(0.3)
 
-    # ── Récupération HATVP (CSV open data) ───────────────────────────────────
-    hatvp_rows = fetch_hatvp_data()
-    if not hatvp_rows:
-        print("✗ Aucune donnée HATVP disponible. Arrêt.")
+    # ��─ Récupération HATVP (XML open data) ───────────────────────────────────
+    xml_root = fetch_hatvp_xml()
+    if xml_root is None:
+        print("✗ Aucune source HATVP XML disponible. Arrêt.")
+        sys.exit(1)
+
+    hatvp_records = parse_hatvp_xml(xml_root)
+    if not hatvp_records:
+        print("✗ Aucun enregistrement HATVP extrait du XML. Arrêt.")
         sys.exit(1)
 
     # ── Conversion en élus ────────────────────────────────────────────────────
     raw_elus: list[dict] = []
-    for row in hatvp_rows:
-        elu = hatvp_csv_row_to_elu(row, an_map)
+    for record in hatvp_records:
+        elu = hatvp_record_to_elu(record, an_map)
         if elu:
             raw_elus.append(elu)
 
-    print(f"✓ {len(raw_elus)} élus convertis depuis HATVP (avant déduplication)")
+    print(f"✓ {len(raw_elus)} élus convertis depuis HATVP XML (avant déduplication)")
 
     # ── Déduplication ─────────────────────────────────────────────────────────
     new_elus = deduplicate_elus(raw_elus)
@@ -720,23 +772,22 @@ def main():
     if len(raw_elus) - len(new_elus) > 0:
         print(f"  → {len(raw_elus) - len(new_elus)} doublon(s) supprimé(s)")
 
-    # ── Enrichissement avec les fiches détaillées HATVP ──────────────────────
+    # ── Enrichissement JSON individuel HATVP ──────────────────────────────────
     if not args.no_detail:
         elus_with_id = [e for e in new_elus if e.get("hatvp_id")]
         total_detail = len(elus_with_id) if not args.limit else min(args.limit, len(elus_with_id))
-        print(f"\n🔍 Enrichissement détaillé pour {total_detail} élus (avec hatvp_id)…")
+        print(f"\n🔍 Enrichissement JSON individuel pour {total_detail} élus…")
         for i, elu in enumerate(elus_with_id[:total_detail], 1):
             print(
                 f"  [{i}/{total_detail}] {elu['prenom']} {elu['nom']} "
                 f"(id={elu['hatvp_id']})",
-                end="",
-                flush=True,
+                end="", flush=True,
             )
-            enrich_with_detail(elu, args.delay)
+            enrich_with_json_detail(elu, args.delay)
             n_place = len(elu.get("placements", []))
             print(f" → {n_place} placement(s), patrimoine={elu['patrimoine']:,}€")
     else:
-        print("ℹ Enrichissement détaillé désactivé (--no-detail)")
+        print("ℹ Enrichissement JSON individuel désactivé (--no-detail)")
 
     # ── Fusion avec les existants + tri ──────────────────────────────────────
     merged = merge_with_existing(new_elus, existing_elus)
@@ -745,7 +796,7 @@ def main():
     if args.limit:
         merged = merged[: args.limit]
 
-    # ── Sauvegarde ────────────────────────────────────────────────────────────
+    # ── Sauvegarde ───────────────────────────────────────────────────────────
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(merged, f, ensure_ascii=False, indent=2)
