@@ -29,7 +29,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -111,9 +111,9 @@ def http_get(url: str, timeout: int = 30) -> Optional[bytes]:
                 return resp.read()
     except urllib.error.HTTPError as exc:
         if exc.code not in (404, 403, 410):
-            pass  # Silencieux pour ne pas polluer la sortie
-    except Exception:
-        pass
+            print(f"\n[http_get] HTTP {exc.code} : {url}", file=sys.stderr)
+    except Exception as exc:
+        print(f"\n[http_get] Erreur inattendue : {exc} ({url})", file=sys.stderr)
     return None
 
 
@@ -279,12 +279,12 @@ def parse_items(section: ET.Element, item_parser) -> list:
         return []
     
     items = []
-    # Essayer plusieurs chemins possibles
-    for path in [".//items/items", ".//items", ".//item", ".//*"]:
+    # Essayer les chemins dans l'ordre, sans fallback sur .//* qui est trop large
+    for path in [".//items/items", ".//items", ".//item"]:
         found = section.findall(path)
         if found:
             for elem in found:
-                if elem.tag == "items" or elem.tag == "item":
+                if elem.tag in ("items", "item"):
                     parsed = item_parser(elem)
                     if parsed:
                         items.append(parsed)
@@ -679,7 +679,7 @@ def process_elu(elu: dict, index: list[dict], force: bool, delay: float) -> Opti
     
     # Ne garder que les données essentielles
     result = {
-        "hatvp_scraped_at": datetime.utcnow().isoformat() + "Z",
+        "hatvp_scraped_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         **patrimoine,
         "declarations": consolidated["declarations"],
     }
@@ -709,7 +709,7 @@ def load_elus() -> list[dict]:
 
 
 def save_elus(elus: list[dict], backup: bool = True) -> None:
-    """Sauvegarder elus.json avec backup."""
+    """Sauvegarder elus.json de façon atomique."""
     os.makedirs(os.path.dirname(OUTPUT_JSON), exist_ok=True)
     
     # Backup
@@ -717,8 +717,10 @@ def save_elus(elus: list[dict], backup: bool = True) -> None:
         backup_path = OUTPUT_JSON + f".backup.{int(time.time())}"
         os.rename(OUTPUT_JSON, backup_path)
     
-    with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
+    tmp_path = OUTPUT_JSON + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(elus, f, ensure_ascii=False, indent=2)
+    os.replace(tmp_path, OUTPUT_JSON)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -732,6 +734,7 @@ def parse_args():
     p.add_argument("--delay", type=float, default=0.3, help="Délai entre requêtes (secondes)")
     p.add_argument("--test-elu", type=str, help="Tester un élu spécifique")
     p.add_argument("--refresh-index", action="store_true", help="Re-télécharger l'index CSV")
+    p.add_argument("--skip-existing", action="store_true", help="Passer les élus qui ont déjà des données HATVP")
     return p.parse_args()
 
 
@@ -807,6 +810,10 @@ def main():
         elu_name = f"{prenom} {nom}"
         
         progress.print_progress(elu_name, "⏳")
+        
+        if args.skip_existing and elu.get("hatvp"):
+            progress.update(not_found=True)
+            continue
         
         try:
             result = process_elu(elu, index, force=args.force, delay=args.delay)
