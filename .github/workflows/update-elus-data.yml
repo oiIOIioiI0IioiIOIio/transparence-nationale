@@ -1,0 +1,83 @@
+name: 🗳️ Mise à jour des données élus
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Nombre d'élus à générer (vide = tous)"
+        required: false
+        default: ""
+  schedule:
+    - cron: "0 6 1 * *"
+
+permissions:
+  contents: write
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('scripts/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Installer les dépendances
+        run: pip install -r scripts/requirements.txt
+
+      - name: Générer les données élus
+        run: |
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            python scripts/generate-elus.py --limit "${{ github.event.inputs.limit }}"
+          else
+            python scripts/generate-elus.py
+          fi
+
+      - name: Vérifier les changements
+        id: check_changes
+        run: |
+          if git diff --quiet public/data/elus.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            COUNT=$(python3 -c "import json; d=json.load(open('public/data/elus.json')); print(len(d))")
+            echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit et push
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          DATE=$(date -u +"%Y-%m-%d")
+          COUNT=${{ steps.check_changes.outputs.count }}
+          git add public/data/elus.json
+          git commit -m "🗳️ Mise à jour données élus — ${DATE} (${COUNT} élus)"
+          git push
+
+      - name: Résumé
+        run: |
+          if [ "${{ steps.check_changes.outputs.changed }}" == "true" ]; then
+            echo "## ✅ Données mises à jour" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Élus générés** : ${{ steps.check_changes.outputs.count }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Date** : $(date -u +"%Y-%m-%d %H:%M UTC")" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## ℹ️ Aucun changement détecté" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Les données sont déjà à jour." >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -1,0 +1,105 @@
+name: 📸 Mise à jour des photos élus
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Re-télécharger même si le fichier existe"
+        type: boolean
+        required: false
+        default: false
+      limit:
+        description: "Nombre de photos à traiter (vide = toutes)"
+        required: false
+        default: ""
+  workflow_run:
+    workflows:
+      - "🗳️ Mise à jour des données élus"
+    types:
+      - completed
+  schedule:
+    - cron: "0 8 1 * *"
+
+permissions:
+  contents: write
+
+jobs:
+  update-photos:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('scripts/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Installer les dépendances
+        run: pip install -r scripts/requirements.txt
+
+      - name: Télécharger les photos
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.force }}" == "true" ]; then
+            ARGS="$ARGS --force"
+          fi
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          fi
+          python scripts/scrape-photos.py $ARGS
+
+      - name: Vérifier les changements
+        id: check_changes
+        run: |
+          if git diff --quiet public/photos/ public/data/elus.json 2>/dev/null; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            COUNT=$(git diff --name-only public/photos/ | wc -l | tr -d ' ')
+            echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit et push
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          DATE=$(date -u +"%Y-%m-%d")
+          COUNT=${{ steps.check_changes.outputs.count }}
+          git add public/photos/ public/data/elus.json
+          git commit -m "📸 Mise à jour photos élus — ${DATE} (${COUNT} nouvelles photos)"
+          git push
+
+      - name: Upload artifact photos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: elus-photos-${{ github.run_number }}
+          path: public/photos/
+          retention-days: 7
+
+      - name: Résumé
+        run: |
+          if [ "${{ steps.check_changes.outputs.changed }}" == "true" ]; then
+            echo "## ✅ Photos mises à jour" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Nouvelles photos** : ${{ steps.check_changes.outputs.count }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Date** : $(date -u +"%Y-%m-%d %H:%M UTC")" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## ℹ️ Aucune photo modifiée" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Toutes les photos sont déjà à jour." >> "$GITHUB_STEP_SUMMARY"
+          fi
