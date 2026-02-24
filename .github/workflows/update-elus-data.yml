@@ -1,83 +1,98 @@
 name: 🗳️ Mise à jour des données élus
 
 on:
+  # Exécution manuelle
   workflow_dispatch:
     inputs:
       limit:
-        description: "Nombre d'élus à générer (vide = tous)"
+        description: 'Nombre d\'élus à traiter (laisser vide pour tous)'
         required: false
-        default: ""
+        type: number
+      force:
+        description: 'Forcer le re-téléchargement des XMLs'
+        required: false
+        type: boolean
+        default: false
+  
+  # Exécution programmée (tous les dimanches à 2h du matin)
   schedule:
-    - cron: "0 6 1 * *"
-
-permissions:
-  contents: write
+    - cron: '0 2 * * 0'
 
 jobs:
-  update-data:
+  scrape-hatvp:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 360  # 6 heures max (pour traiter des milliers d'élus)
+    
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-
-      - name: Setup Python 3.11
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-
-      - name: Cache pip
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Pas de dépendances externes nécessaires (utilise stdlib uniquement)
+      
+      - name: Restore cache
         uses: actions/cache@v4
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('scripts/requirements.txt') }}
+          path: |
+            public/data/hatvp_cache
+          key: hatvp-cache-${{ github.run_id }}
           restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: Installer les dépendances
-        run: pip install -r scripts/requirements.txt
-
-      - name: Générer les données élus
+            hatvp-cache-
+      
+      - name: Run HATVP scraper
+        id: scrape
         run: |
-          if [ -n "${{ github.event.inputs.limit }}" ]; then
-            python scripts/generate-elus.py --limit "${{ github.event.inputs.limit }}"
-          else
-            python scripts/generate-elus.py
-          fi
-
-      - name: Vérifier les changements
-        id: check_changes
+          python scripts/generate-elus-hatvp-complete.py \
+            ${{ inputs.limit && format('--limit {0}', inputs.limit) || '' }} \
+            ${{ inputs.force && '--force' || '' }} \
+            --skip-existing \
+            --delay 0.5
+        env:
+          GITHUB_ACTIONS: true
+      
+      - name: Commit and push if changed
         run: |
-          if git diff --quiet public/data/elus.json; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            COUNT=$(python3 -c "import json; d=json.load(open('public/data/elus.json')); print(len(d))")
-            echo "count=$COUNT" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Commit et push
-        if: steps.check_changes.outputs.changed == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          DATE=$(date -u +"%Y-%m-%d")
-          COUNT=${{ steps.check_changes.outputs.count }}
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Ajouter les fichiers modifiés
           git add public/data/elus.json
-          git commit -m "🗳️ Mise à jour données élus — ${DATE} (${COUNT} élus)"
-          git push
-
-      - name: Résumé
-        run: |
-          if [ "${{ steps.check_changes.outputs.changed }}" == "true" ]; then
-            echo "## ✅ Données mises à jour" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Élus générés** : ${{ steps.check_changes.outputs.count }}" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Date** : $(date -u +"%Y-%m-%d %H:%M UTC")" >> "$GITHUB_STEP_SUMMARY"
+          git add public/data/hatvp_cache/
+          
+          # Commit seulement s'il y a des changements
+          if git diff --staged --quiet; then
+            echo "Pas de changements à commiter"
           else
-            echo "## ℹ️ Aucun changement détecté" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Les données sont déjà à jour." >> "$GITHUB_STEP_SUMMARY"
+            git commit -m "🤖 Update HATVP data - ${{ steps.scrape.outputs.total_updated }} élus mis à jour"
+            git push
           fi
+      
+      - name: Deploy to Vercel (production)
+        if: github.ref == 'refs/heads/main'
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+      
+      - name: Summary
+        if: always()
+        run: |
+          echo "### 📊 Résumé du scraping HATVP" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Élus mis à jour : ${{ steps.scrape.outputs.total_updated }}" >> $GITHUB_STEP_SUMMARY
+          echo "- ⏭️ Élus skippés : ${{ steps.scrape.outputs.total_skipped }}" >> $GITHUB_STEP_SUMMARY
+          echo "- ❌ Erreurs : ${{ steps.scrape.outputs.total_errors }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 [Voir les changements](https://github.com/${{ github.repository }}/commit/${{ github.sha }})" >> $GITHUB_STEP_SUMMARY
