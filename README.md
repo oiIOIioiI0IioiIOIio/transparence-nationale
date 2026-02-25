@@ -1,124 +1,133 @@
 # Transparence Nationale
 
-Une galerie interactive qui présente, de manière claire et accessible, le patrimoine et les revenus des élu·e·s français·es à partir des données publiques de la HATVP (Haute Autorité pour la Transparence de la Vie Publique).
+**Version 2.0** — Plateforme d'investigation citoyenne sur le patrimoine des élus français
 
 ![Next.js](https://img.shields.io/badge/Next.js-14-black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.3-38bdf8)
-![License](https://img.shields.io/badge/License-MIT-green)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.4-38bdf8)
 
-## Ce que vous trouverez ici
+Cette plateforme présente de manière rigoureuse et accessible les déclarations de patrimoine et de situation financière des élus français, en s'appuyant exclusivement sur les données officielles de la **HATVP** (Haute Autorité pour la Transparence de la Vie Publique).
 
-- Une recherche simple pour retrouver un·e élu·e par nom, fonction ou région.
-- Visualisations qui expliquent la composition du patrimoine (logements, placements, autres).
-- Une interface responsive pensée pour être lisible sur ordinateur et mobile.
-- Pages de profil détaillées pour chaque élu·e avec chiffres et graphiques.
 
-## Prérequis et démarrage
+## Fonctionnalités v2.0
 
-Prérequis :
-- Node.js (version récente)
-- npm ou yarn
-- Python (pour le script de récupération des photos, si vous l'utilisez)
+### Interface
+-  **Mode nuit** : basculement clair/sombre avec mémorisation
+-  **Chargement progressif** : 20 élus en preview, puis chargement complet sur demande
+-  **Design épuré** : pas de photos, focus sur les données
+-  **Mobile-first** : optimisé pour tous les écrans
+-  **Performance** : site ultra-léger et rapide
 
-Pour lancer le projet en local :
+### Données
+-  **Patrimoine détaillé** : total, immobilier, placements
+-  **Revenus annuels** : indemnités et revenus d'activité
+-  **Instruments financiers** : actions, obligations, assurance-vie (HATVP)
+-  **Participations** : sociétés, SARL, SCI (HATVP)
+-  **Mandats** : fonctions actuelles et historique
 
-```bash
-# cloner le dépôt
-git clone https://github.com/votre-username/transparence-nationale.git
-cd transparence-nationale
+### Recherche et tri
+-  **Recherche avancée** : nom, fonction, région, mandats
+-  **7 modes de tri** :
+  - Nom (A-Z)
+  - Patrimoine (décroissant)
+  - Revenus (décroissant)
+  - Immobilier (décroissant)
+  - Placements (décroissant)
+  - Instruments financiers (décroissant)
+  - Participations (décroissant)
 
-# installer les dépendances
-npm install
 
-# lancer le serveur de développement
-npm run dev
+##  Structure du projet
+
+```
+transparence-nationale/
+├── src/
+│   ├── app/
+│   │   ├── page.tsx              # Page d'accueil
+│   │   ├── layout.tsx            # Layout principal
+│   │   ├── globals.css           # Styles globaux + mode nuit
+│   │   └── profils/[id]/
+│   │       └── page.tsx          # Page de profil détaillée
+│   ├── components/
+│   │   ├── Header.tsx            # En-tête avec mode nuit
+│   │   ├── PersonCard.tsx        # Carte élu (sans photo)
+│   │   └── SearchBar.tsx         # Recherche et tri avancés
+│   ├── hooks/
+│   │   └── useElus.ts            # Store Zustand
+│   └── lib/
+│       └── types.ts              # Types TypeScript
+├── public/
+│   └── data/
+│       └── elus.json             # Base de données élus
+├── scripts/
+│   └── generate-elus.py          # Script de récupération HATVP
+├── package.json
+├── next.config.js
+├── tailwind.config.js
+└── tsconfig.json
 ```
 
-Ensuite, ouvrez http://localhost:3000 dans votre navigateur.
+##  Format des données (elus.json)
 
-## Structure du projet (vue d'ensemble)
-
-- src/app : pages et layout principaux
-- src/components : composants réutilisables (cartes, graphiques, barre de recherche)
-- src/hooks : gestion d'état
-- src/lib : types et petites utilitaires
-- public/data : données statiques (liste des élu·e·s)
-- public/photos : photos des élu·e·s (générées par le script)
-- scripts : scripts utiles (ex. récupération de photos)
-
-## Données et provenance
-
-Les informations affichées proviennent de sources publiques officielles :
-- HATVP (données déclaratives)
-- API de l'Assemblée nationale pour les photos et métadonnées
-- Wikipedia comme source de secours pour certaines images
-
-Le projet utilise des fichiers de données statiques pour l'affichage, et un script Python permet de télécharger les photos depuis les API indiquées.
-
-Pour récupérer les photos :
-
-```bash
-cd scripts
-python3 scrape-photos.py
+```json
+{
+  "id": "jean-dupont",
+  "nom": "Dupont",
+  "prenom": "Jean",
+  "fonction": "Député",
+  "region": "Île-de-France",
+  "revenus": 85000,
+  "patrimoine": 1200000,
+  "immobilier": 800000,
+  "placements": 300000,
+  "mandats": ["Député", "Conseiller municipal"],
+  "liens": {
+    "assemblee": "https://...",
+    "hatvp": "https://...",
+    "wikipedia": "https://..."
+  },
+  "hatvp_finances": {
+    "nb_instruments_financiers": 15,
+    "nb_participations_societes": 3,
+    "valeur_totale_instruments_euro": 250000,
+    "valeur_totale_participations_euro": 100000,
+    "types_instruments": {
+      "ACTIONS": 10,
+      "OBLIGATIONS": 3,
+      "ASSURANCE_VIE": 2
+    },
+    "nb_declarations_hatvp": 2,
+    "hatvp_scraped_at": "2024-01-15T10:30:00Z"
+  }
+}
 ```
 
-Le script place les images dans public/photos.
+## 📝 Licence
 
-## Composants principaux (résumé)
+**MIT** — Projet open source à but non lucratif.
 
-- PersonCard : carte d'un·e élu·e avec photo, nom, fonction et indicateurs clés.
-- PortfolioChart : graphique montrant la répartition du patrimoine.
-- SearchBar : recherche et tri en temps réel.
+##  Mentions légales
 
-## Déploiement
+Les données affichées proviennent de déclarations publiques officielles déposées auprès de la HATVP. 
+Ce projet vise la transparence et l'information citoyenne. Il n'a aucun objectif commercial ou partisan.
 
-Le projet se déploie facilement sur une plateforme d'hébergement comme Vercel. En local :
+**Sources officielles** :
+- [HATVP](https://www.hatvp.fr) — Haute Autorité pour la Transparence de la Vie Publique
+- [Assemblée Nationale](https://www.assemblee-nationale.fr) — Données parlementaires
+- [data.gouv.fr](https://www.data.gouv.fr) — Open data gouvernemental
 
-```bash
-# build
-npm run build
+##  Contribution
 
-# démarrer en production
-npm start
-```
+Les contributions sont bienvenues ! Pour contribuer :
 
-Aucune variable d'environnement n'est nécessaire pour la version qui utilise uniquement des données statiques.
+1. Fork le projet
+2. Créer une branche (`git checkout -b feature/amelioration`)
+3. Commit (`git commit -m 'Ajout fonctionnalité'`)
+4. Push (`git push origin feature/amelioration`)
+5. Ouvrir une Pull Request
 
-## Scripts disponibles
+##  Contact
 
-- npm run dev — serveur de développement
-- npm run build — build de production
-- npm start — serveur production
-- npm run lint — v��rification de code
-- npm run scrape — lancer le script de récupération des photos
+Pour toute question ou suggestion, ouvrir une [issue](https://github.com/votre-username/transparence-nationale/issues).
 
-## Contribution
-
-Les contributions sont bienvenues. Si vous souhaitez aider :
-
-1. Forkez le projet.
-2. Créez une branche pour votre fonctionnalité.
-3. Faites vos changements et commitez.
-4. Poussez votre branche et ouvrez une pull request.
-
-Merci d'expliquer brièvement le but de vos changements et, si nécessaire, de fournir des exemples ou captures d'écran.
-
-## Licence
-
-Ce projet est publié sous licence MIT. Voir le fichier LICENSE pour les détails.
-
-## Prochaines étapes envisagées
-
-Parmi les améliorations possibles :
-- Historique des mandats
-- Comparateur entre deux élu·e·s
-- Mode sombre
-- Export PDF/CSV
-- Statistiques globales et graphiques d'évolution
-
-## Remarques légales et confidentialité
-
-Les informations présentées proviennent de déclarations publiques déposées auprès d'organismes officiels. Ce projet vise la transparence et l'information ; il n'a pas d'objectif commercial. Seules des données publiques et légalement accessibles sont utilisées.
-
-Si vous avez des questions ou des suggestions, ouvrez une issue sur le dépôt.
+---
