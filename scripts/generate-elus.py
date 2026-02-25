@@ -2,29 +2,30 @@
 """
 Script de récupération des déclarations HATVP complètes des élus français.
 
-Lit le fichier index officiel HATVP (liste.csv), télécharge les XMLs
-correspondant à chaque élu et extrait TOUTES les sections patrimoniales :
-  - instruments financiers (actions, obligations, ETF, PEA, assurance-vie…)
-  - participations financières dans des sociétés (cotées ou non)
-  - biens immobiliers (résidence principale, secondaire, locatifs…)
-  - comptes bancaires et livrets d'épargne
-  - véhicules (voitures, bateaux, avions…)
-  - autres biens mobiliers (œuvres d'art, bijoux, chevaux…)
-  - dettes et emprunts
-  - revenus (salaires, revenus locatifs, jetons de présence…)
-  - activités professionnelles et mandats (DI)
-  - autres liens d'intérêts (DI)
+Télécharge le fichier XML unique HATVP (declarations.xml) contenant TOUTES
+les déclarations publiées, puis extrait récursivement TOUTES les informations
+de chaque déclaration pour chaque élu présent dans elus.json.
+
+Sections extraites (DSP — patrimoine) :
+  - biens immobiliers, comptes bancaires, instruments financiers
+  - participations financières, véhicules, biens mobiliers de valeur
+  - dettes/emprunts, revenus
+Sections extraites (DI — intérêts) :
+  - activités professionnelles, activités antérieures, mandats électifs
+  - participations dans des organes, fonctions bénévoles
+  - autres liens d'intérêts
 
 Sources :
-  Index CSV  : https://www.hatvp.fr/livraison/opendata/liste.csv
-  XMLs       : https://www.hatvp.fr/livraison/dossiers/{fichier}.xml
-  Doc xlsx   : https://www.data.gouv.fr/api/1/datasets/r/f99ea4c7-ddf4-484b-b7de-ea4419c9f865
+  Index CSV     : https://www.hatvp.fr/livraison/opendata/liste.csv
+  XML (toutes)  : https://www.hatvp.fr/livraison/opendata/declarations.xml
+  Doc officielle: https://www.hatvp.fr/open-data/
 
 Utilisation :
   python generate-elus.py --dry-run
   python generate-elus.py --limit 50
   python generate-elus.py --test-elu "Yaël Braun-Pivet"
   python generate-elus.py --force
+  python generate-elus.py --dump-xml-sample   # affiche un XML brut pour debug
 """
 
 import argparse
@@ -42,28 +43,38 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 
 # ── Chemins ────────────────────────────────────────────────────────────────────
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-OUTPUT_JSON = os.path.join(PROJECT_ROOT, "public", "data", "elus.json")
-CACHE_DIR = os.path.join(PROJECT_ROOT, "public", "data", "hatvp_cache")
-INDEX_CACHE = os.path.join(CACHE_DIR, "liste.csv")
+OUTPUT_JSON  = os.path.join(PROJECT_ROOT, "public", "data", "elus.json")
+CACHE_DIR    = os.path.join(PROJECT_ROOT, "public", "data", "hatvp_cache")
+INDEX_CACHE  = os.path.join(CACHE_DIR, "liste.csv")
+XML_CACHE    = os.path.join(CACHE_DIR, "declarations.xml")
 
 # ── URLs HATVP open data ───────────────────────────────────────────────────────
 HATVP_INDEX_URL = "https://www.hatvp.fr/livraison/opendata/liste.csv"
-HATVP_XML_BASE  = "https://www.hatvp.fr/livraison/dossiers/"
 
-# ── Types de déclaration ───────────────────────────────────────────────────────
-# DSP  = Déclaration de Situation Patrimoniale (initiale)
-# DSPM = DSP Modificative
-# DI   = Déclaration d'Intérêts (initiale)
-# DIM  = DI Modificative
-WANTED_TYPES = {"DSP", "DSPM", "DI", "DIM"}
-DSP_TYPES    = {"DSP", "DSPM"}
-DI_TYPES     = {"DI",  "DIM"}
+# Le XML unique contenant TOUTES les déclarations
+HATVP_DECLARATIONS_XML_URL = "https://www.hatvp.fr/livraison/opendata/declarations.xml"
+
+# Fallback : XMLs individuels par nom_fichier (colonne du CSV)
+HATVP_DOSSIER_BASE = "https://www.hatvp.fr/livraison/dossiers/"
+
+# ── Colonnes réelles du CSV HATVP (notice officielle) ─────────────────────────
+# civilite;prenom;nom;classement;type_mandat;qualite;type_document;departement;
+# date_publication;nom_fichier;url_dossier;id_origine;url_photo
+#
+# type_document : DI, DSP, DSPFIN, DIMAJ, etc.
+# nom_fichier   : nom du PDF (souvent aussi base du XML)
+# url_dossier   : slug URL vers la page de la déclaration
+
+# Types de déclaration à extraire
+DSP_TYPES = {"DSP", "DSPM", "DSPFIN", "DSPMAJ"}
+DI_TYPES  = {"DI", "DIM", "DIMAJ"}
+ALL_DOC_TYPES = DSP_TYPES | DI_TYPES
 
 # ── Headers HTTP ──────────────────────────────────────────────────────────────
 HEADERS = {
-    "User-Agent": "TransparenceNationale/1.0 (open source)",
+    "User-Agent": "TransparenceNationale/1.0 (open source; github.com/transparence-nationale)",
     "Accept": "text/csv, application/xml, text/xml, */*",
 }
 
@@ -76,13 +87,19 @@ def parse_args():
     p = argparse.ArgumentParser(
         description="Extrait le patrimoine complet (DSP + DI) depuis les XMLs HATVP."
     )
-    p.add_argument("--dry-run",       action="store_true", help="Ne pas écrire de fichiers")
-    p.add_argument("--force",         action="store_true", help="Re-télécharger même si en cache")
-    p.add_argument("--limit",         type=int,   default=None, help="Limiter le nombre d'élus")
-    p.add_argument("--delay",         type=float, default=0.5,  help="Délai entre requêtes (défaut 0.5 s)")
-    p.add_argument("--test-elu",      type=str,   default=None, help="Tester un élu précis")
-    p.add_argument("--refresh-index", action="store_true",
+    p.add_argument("--dry-run",          action="store_true", help="Ne pas écrire de fichiers")
+    p.add_argument("--force",            action="store_true", help="Re-télécharger même si en cache")
+    p.add_argument("--limit",            type=int,   default=None, help="Limiter le nombre d'élus")
+    p.add_argument("--delay",            type=float, default=0.3,  help="Délai entre requêtes (défaut 0.3 s)")
+    p.add_argument("--test-elu",         type=str,   default=None, help="Tester un élu précis")
+    p.add_argument("--refresh-index",    action="store_true",
                    help="Forcer le re-téléchargement du CSV index HATVP")
+    p.add_argument("--refresh-xml",      action="store_true",
+                   help="Forcer le re-téléchargement du XML complet HATVP")
+    p.add_argument("--dump-xml-sample",  action="store_true",
+                   help="Afficher un extrait du XML brut (debug)")
+    p.add_argument("--dump-csv-columns", action="store_true",
+                   help="Afficher les colonnes du CSV index (debug)")
     return p.parse_args()
 
 
@@ -90,7 +107,8 @@ def parse_args():
 # Réseau
 # ══════════════════════════════════════════════════════════════════════════════
 
-def http_get(url: str, timeout: int = 30) -> bytes | None:
+def http_get(url: str, timeout: int = 120) -> bytes | None:
+    """Télécharger une URL. Timeout élevé pour le gros XML (~200 Mo)."""
     req = urllib.request.Request(url, headers=HEADERS)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -104,32 +122,167 @@ def http_get(url: str, timeout: int = 30) -> bytes | None:
     return None
 
 
+def download_file(url: str, cache_path: str, force: bool = False,
+                  max_age_h: float = 24, delay: float = 0.3) -> bytes | None:
+    """Télécharger un fichier avec cache local."""
+    if not force and os.path.exists(cache_path):
+        age_h = (time.time() - os.path.getmtime(cache_path)) / 3600
+        if age_h < max_age_h:
+            print(f"  ✓ En cache ({age_h:.1f} h) : {os.path.basename(cache_path)}")
+            with open(cache_path, "rb") as f:
+                return f.read()
+        else:
+            print(f"  ↻ Cache trop ancien ({age_h:.1f} h), re-téléchargement…")
+
+    time.sleep(delay)
+    print(f"  🔄 Téléchargement : {url}")
+    data = http_get(url)
+    if data:
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+        with open(cache_path, "wb") as f:
+            f.write(data)
+        print(f"  ✓ Téléchargé ({len(data):,} octets) → {cache_path}")
+    return data
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Helpers XML génériques
+# ══════════════════════════════════════════════════════════════════════════════
+
+def xml_text(element: ET.Element | None, path: str, default: str = "") -> str:
+    """Extraire le texte d'un nœud XML en toute sécurité."""
+    if element is None:
+        return default
+    node = element.find(path)
+    if node is not None and node.text:
+        t = node.text.strip()
+        if t and t not in ("[Données non publiées]", "null"):
+            return t
+    return default
+
+
+def parse_montant(s: str) -> float | None:
+    """Convertir une chaîne montant en float."""
+    if not s:
+        return None
+    s = s.replace("\xa0", "").replace(" ", "").replace(",", ".").strip()
+    s = re.sub(r"[^\d.\-]", "", s)
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def normalize_name(s: str) -> str:
+    """Normaliser un nom : minuscules, sans accents, sans tirets."""
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    s = s.lower()
+    s = re.sub(r"[-\s]+", " ", s).strip()
+    return s
+
+
+def element_to_dict(el: ET.Element) -> dict:
+    """
+    Convertir récursivement un élément XML en dict.
+    Si un élément a des enfants, on récurse. Sinon, on prend le texte.
+    Gère les listes (<items>) et les sous-objets (<nature><id>X</id></nature>).
+    """
+    result = {}
+    children = list(el)
+    if not children:
+        # Feuille : retourner le texte
+        t = (el.text or "").strip()
+        if t and t != "[Données non publiées]":
+            return t
+        return ""
+
+    for child in children:
+        tag = child.tag
+        value = element_to_dict(child)
+
+        if tag == "items":
+            # Accumuler les <items> dans une liste
+            result.setdefault("_items", [])
+            if isinstance(value, dict) and "_items" in value:
+                # items imbriqués : <items><items>...</items></items>
+                result["_items"].extend(value["_items"])
+            elif value:  # Ignorer les vides
+                result["_items"].append(value)
+        elif tag in result:
+            # Doublon (rare) : convertir en liste
+            existing = result[tag]
+            if isinstance(existing, list):
+                existing.append(value)
+            else:
+                result[tag] = [existing, value]
+        else:
+            result[tag] = value
+
+    return result
+
+
+def flatten_section_items(section_dict: dict) -> list[dict]:
+    """Extraire la liste d'items d'une section parsée récursivement."""
+    if not isinstance(section_dict, dict):
+        return []
+    # Vérifier neant
+    neant = section_dict.get("neant", "")
+    if isinstance(neant, str) and neant.lower() == "true":
+        return []
+    items = section_dict.get("_items", [])
+    # Filtrer les items qui sont des dicts non vides
+    result = []
+    for item in items:
+        if isinstance(item, dict):
+            # Aplatir les sous-objets (nature/id → nature_id, nature/label → nature_label)
+            flat = flatten_item(item)
+            if flat and any(v for v in flat.values() if v):
+                result.append(flat)
+    return result
+
+
+def flatten_item(d: dict, prefix: str = "") -> dict:
+    """
+    Aplatir un dict imbriqué.
+    {nature: {id: "X", label: "Y"}} → {nature_id: "X", nature_label: "Y"}
+    """
+    result = {}
+    for k, v in d.items():
+        if k == "_items":
+            continue  # Ignorer les sous-listes imbriquées
+        key = f"{prefix}{k}" if not prefix else f"{prefix}_{k}"
+        if isinstance(v, dict):
+            # Sous-objet (ex: nature/id, modeDetention/label)
+            if "id" in v or "label" in v:
+                if v.get("id"):
+                    result[f"{key}_id"] = v["id"]
+                if v.get("label"):
+                    result[f"{key}_label"] = v["label"]
+                # Garder aussi la valeur combinée
+                result[key] = v.get("label") or v.get("id") or ""
+            else:
+                # Récurser
+                sub = flatten_item(v, key)
+                result.update(sub)
+        elif isinstance(v, list):
+            # Multiple valeurs (rare)
+            result[key] = "; ".join(str(x) for x in v if x)
+        else:
+            result[key] = v if v else ""
+    return result
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Chargement de l'index CSV HATVP
 # ══════════════════════════════════════════════════════════════════════════════
 
-def load_hatvp_index(force_refresh: bool = False, delay: float = 0.5) -> list[dict]:
+def load_hatvp_index(force_refresh: bool = False, delay: float = 0.3) -> list[dict]:
+    """Télécharger et parser le CSV index HATVP."""
     os.makedirs(CACHE_DIR, exist_ok=True)
-    raw = None
-
-    if not force_refresh and os.path.exists(INDEX_CACHE):
-        age_h = (time.time() - os.path.getmtime(INDEX_CACHE)) / 3600
-        if age_h < 24:
-            print(f"  ✓ Index CSV en cache (âge : {age_h:.1f} h)")
-            with open(INDEX_CACHE, "rb") as f:
-                raw = f.read()
-        else:
-            print(f"  ↻ Cache trop ancien ({age_h:.1f} h), re-téléchargement…")
-
-    if raw is None:
-        print(f"  🔄 Téléchargement index HATVP : {HATVP_INDEX_URL}")
-        time.sleep(delay)
-        raw = http_get(HATVP_INDEX_URL)
-        if not raw:
-            raise RuntimeError(f"Impossible de télécharger l'index HATVP : {HATVP_INDEX_URL}")
-        with open(INDEX_CACHE, "wb") as f:
-            f.write(raw)
-        print(f"  ✓ Index téléchargé ({len(raw):,} octets) et mis en cache")
+    raw = download_file(HATVP_INDEX_URL, INDEX_CACHE, force=force_refresh, delay=delay)
+    if not raw:
+        raise RuntimeError(f"Impossible de télécharger l'index HATVP : {HATVP_INDEX_URL}")
 
     try:
         text = raw.decode("utf-8-sig")
@@ -138,574 +291,247 @@ def load_hatvp_index(force_refresh: bool = False, delay: float = 0.5) -> list[di
 
     reader = csv.DictReader(io.StringIO(text), delimiter=";")
     rows = list(reader)
-    print(f"  ✓ {len(rows):,} déclarations dans l'index")
+    if rows:
+        print(f"  ✓ {len(rows):,} entrées — colonnes : {list(rows[0].keys())}")
+    else:
+        print("  ⚠ CSV vide")
     return rows
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Correspondance élu ↔ déclarations HATVP
+# Chargement du XML complet HATVP (declarations.xml)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def normalize_name(s: str) -> str:
-    s = unicodedata.normalize("NFD", s)
-    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
-    s = s.lower()
-    s = re.sub(r"[-\s]+", " ", s).strip()
-    return s
+def load_declarations_xml(force_refresh: bool = False, delay: float = 0.3) -> ET.Element | None:
+    """
+    Télécharger et parser le XML unique contenant TOUTES les déclarations HATVP.
+    Retourne l'élément racine.
+    """
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    raw = download_file(
+        HATVP_DECLARATIONS_XML_URL, XML_CACHE,
+        force=force_refresh, max_age_h=48, delay=delay
+    )
+    if not raw:
+        print("  ⚠ Impossible de télécharger le XML complet")
+        return None
+
+    print(f"  📖 Parsing du XML ({len(raw):,} octets)…")
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError as exc:
+        print(f"  ❌ XML invalide : {exc}")
+        return None
+
+    # Compter les déclarations
+    declarations = root.findall(".//declaration")
+    if not declarations:
+        # Essayer d'autres structures possibles
+        declarations = list(root)
+    print(f"  ✓ {len(declarations)} déclaration(s) dans le XML")
+    return root
 
 
-def find_declarations_for_elu(index: list[dict], prenom: str, nom: str) -> list[dict]:
+def build_xml_index(root: ET.Element) -> dict[str, list[ET.Element]]:
+    """
+    Construire un index {nom_normalisé -> [éléments déclaration]} depuis le XML.
+    Permet une recherche rapide par nom d'élu.
+    """
+    index = {}
+
+    # Le XML peut avoir plusieurs structures. Essayons :
+    # <declarations><declaration>...</declaration></declarations>
+    # ou directement les enfants du root sont des déclarations
+    declarations = root.findall(".//declaration")
+    if not declarations:
+        declarations = list(root)
+
+    for decl in declarations:
+        # Extraire nom/prénom du déclarant
+        nom    = xml_text(decl, ".//general/declarant/nom") or xml_text(decl, ".//declarant/nom") or xml_text(decl, ".//nom") or ""
+        prenom = xml_text(decl, ".//general/declarant/prenom") or xml_text(decl, ".//declarant/prenom") or xml_text(decl, ".//prenom") or ""
+
+        if not nom:
+            continue
+
+        key = normalize_name(f"{prenom} {nom}")
+        index.setdefault(key, []).append(decl)
+
+    print(f"  ✓ Index XML : {len(index)} personnes distinctes")
+    return index
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Index CSV : correspondance élu ↔ déclarations
+# ══════════════════════════════════════════════════════════════════════════════
+
+def find_csv_rows_for_elu(csv_index: list[dict], prenom: str, nom: str) -> list[dict]:
+    """Retrouver les entrées CSV pour un élu (par nom normalisé)."""
     norm_prenom = normalize_name(prenom)
     norm_nom    = normalize_name(nom)
     matched = []
-    for row in index:
-        row_nom    = (row.get("nom")    or row.get("Nom")    or row.get("NOM")    or row.get("nomDeclarant")    or "").strip()
-        row_prenom = (row.get("prenom") or row.get("Prenom") or row.get("PRENOM") or row.get("prenomDeclarant") or "").strip()
-        if not row_nom:
-            continue
-        if normalize_name(row_nom) == norm_nom and normalize_name(row_prenom) == norm_prenom:
+    for row in csv_index:
+        r_nom    = normalize_name(row.get("nom", ""))
+        r_prenom = normalize_name(row.get("prenom", ""))
+        if r_nom == norm_nom and r_prenom == norm_prenom:
             matched.append(row)
-
-    def parse_date(row):
-        date_str = (row.get("dateDepot") or row.get("DateDepot") or row.get("date_depot") or "")
-        for fmt in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y", "%Y-%m-%d"):
-            try:
-                return datetime.strptime(date_str.strip(), fmt)
-            except ValueError:
-                continue
-        return datetime.min
-
-    matched.sort(key=parse_date, reverse=True)
+    # Tri par date de publication (plus récent en premier)
+    def sort_key(row):
+        d = row.get("date_publication", "")
+        try:
+            return datetime.strptime(d.strip(), "%Y-%m-%d")
+        except (ValueError, AttributeError):
+            return datetime.min
+    matched.sort(key=sort_key, reverse=True)
     return matched
 
 
-def get_xml_url(row: dict) -> str | None:
-    url = (row.get("url") or row.get("Url") or row.get("URL") or row.get("urlFichier") or row.get("lien") or "").strip()
-    if url.startswith("http"):
-        return url
-    fichier = (row.get("fichier") or row.get("Fichier") or row.get("nomFichier") or url).strip()
-    if fichier:
-        if not fichier.endswith(".xml"):
-            fichier += ".xml"
-        return HATVP_XML_BASE + fichier
+def get_individual_xml_url(csv_row: dict) -> str | None:
+    """
+    Construire l'URL d'un XML individuel depuis une ligne CSV.
+    La colonne 'nom_fichier' contient le nom du PDF, mais le XML
+    est souvent disponible au même chemin avec extension .xml.
+    La colonne 'url_dossier' contient le slug vers la fiche.
+    """
+    nom_fichier = (csv_row.get("nom_fichier") or "").strip()
+    if nom_fichier:
+        # Remplacer .pdf par .xml
+        base = nom_fichier.rsplit(".", 1)[0] if "." in nom_fichier else nom_fichier
+        return HATVP_DOSSIER_BASE + base + ".xml"
     return None
 
 
-def get_declaration_type(row: dict) -> str:
-    return (row.get("typeDeclaration") or row.get("TypeDeclaration") or row.get("type") or row.get("Type") or "").strip().upper()
-
-
 # ══════════════════════════════════════════════════════════════════════════════
-# Téléchargement XML
+# Extraction récursive complète d'une déclaration XML
 # ══════════════════════════════════════════════════════════════════════════════
 
-def download_xml(url: str, cache_path: str, force: bool = False, delay: float = 0.5) -> bytes | None:
-    if not force and os.path.exists(cache_path):
-        with open(cache_path, "rb") as f:
-            return f.read()
-    time.sleep(delay)
-    data = http_get(url)
-    if data:
-        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-        with open(cache_path, "wb") as f:
-            f.write(data)
-    return data
+# Sections connues du XML HATVP et leur catégorie
+KNOWN_SECTIONS = {
+    # DSP — Patrimoine
+    "instrumentsFinanciersDto":     "instruments_financiers",
+    "participationFinanciereDto":   "participations_financieres",
+    "biensImmobiliersDto":          "biens_immobiliers",
+    "bienImmobilierDto":            "biens_immobiliers",
+    "comptesBancairesDto":          "comptes_bancaires",
+    "compteBancaireDto":            "comptes_bancaires",
+    "liquiditesDto":                "comptes_bancaires",
+    "vehiculesDto":                 "vehicules",
+    "vehiculeDto":                  "vehicules",
+    "autresBiensDto":               "biens_mobiliers_valeur",
+    "biensMobiliersDto":            "biens_mobiliers_valeur",
+    "biensValeurDto":               "biens_mobiliers_valeur",
+    "dettesDto":                    "dettes",
+    "detteDto":                     "dettes",
+    "empruntsDto":                  "dettes",
+    "revenusDto":                   "revenus",
+    "revenuDto":                    "revenus",
+    "revenusActiviteDto":           "revenus",
+    # DI — Intérêts
+    "activitesProfessionnellesDto": "activites_professionnelles",
+    "activiteProfessionnelleDto":   "activites_professionnelles",
+    "fonctionsActuellesDto":        "activites_professionnelles",
+    "activitesAnterieuresDto":      "activites_anterieures",
+    "activiteAnterieureDto":        "activites_anterieures",
+    "fonctionsAnterieuresDto":      "activites_anterieures",
+    "mandatsElectifsDto":           "mandats_electifs",
+    "mandatElectifDto":             "mandats_electifs",
+    "mandatsDto":                   "mandats_electifs",
+    "participationsOrganeDto":      "participations_organes",
+    "participationOrganeDto":       "participations_organes",
+    "organesDirigeantsDto":         "participations_organes",
+    "fonctionsBenevolesDto":        "fonctions_benevoles",
+    "soutiensAssociationsDto":      "fonctions_benevoles",
+    "soutienAssociationDto":        "fonctions_benevoles",
+    "activitesBenevolesDto":        "fonctions_benevoles",
+    "autresLiensInteretsDto":       "autres_liens_interets",
+    "autreLienInteretDto":          "autres_liens_interets",
+    "liensInteretsDto":             "autres_liens_interets",
+    "autresActivitesDto":           "autres_activites",
+    "autreActiviteDto":             "autres_activites",
+    # Sections additionnelles courantes
+    "fonctionsGouvernementalesDto":  "fonctions_gouvernementales",
+    "consultatifEtAutresDto":        "fonctions_consultatives",
+    "participationExploitantDto":    "participations_exploitant",
+}
+
+ALL_OUTPUT_SECTIONS = sorted(set(KNOWN_SECTIONS.values()))
+
+SECTION_LABELS = {
+    "instruments_financiers":       "📈 Instruments financiers",
+    "participations_financieres":   "🏢 Participations dans des sociétés",
+    "biens_immobiliers":            "🏠 Biens immobiliers",
+    "comptes_bancaires":            "🏦 Comptes bancaires & épargne",
+    "vehicules":                    "🚗 Véhicules",
+    "biens_mobiliers_valeur":       "💎 Biens mobiliers de valeur",
+    "dettes":                       "📉 Dettes & emprunts",
+    "revenus":                      "💶 Revenus",
+    "activites_professionnelles":   "💼 Activités professionnelles",
+    "activites_anterieures":        "📋 Activités antérieures",
+    "mandats_electifs":             "🗳️  Mandats électifs",
+    "participations_organes":       "🏛️  Participations à des organes",
+    "fonctions_benevoles":          "🤝 Fonctions bénévoles",
+    "autres_liens_interets":        "⚠️  Autres liens d'intérêts",
+    "autres_activites":             "📝 Autres activités",
+    "fonctions_gouvernementales":   "🏛️  Fonctions gouvernementales",
+    "fonctions_consultatives":      "📋 Fonctions consultatives",
+    "participations_exploitant":    "🏭 Participations exploitant",
+}
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Helpers XML
-# ══════════════════════════════════════════════════════════════════════════════
-
-def xml_text(element, path: str, default: str = "") -> str:
-    if element is None:
-        return default
-    node = element.find(path)
-    if node is not None and node.text:
-        t = node.text.strip()
-        if t and t != "[Données non publiées]":
-            return t
-    return default
-
-
-def parse_montant(s: str) -> float | None:
-    if not s:
-        return None
-    s = s.replace("\xa0", "").replace(" ", "").replace(",", ".").strip()
-    try:
-        return float(s)
-    except ValueError:
-        return None
-
-
-def items_of(section: ET.Element) -> list[ET.Element]:
-    """Retourne la liste des <items> enfants d'une section, en gérant l'imbrication."""
-    if section is None:
-        return []
-    result = section.findall(".//items/items")
-    if not result:
-        result = section.findall("items")
-    # Filtrer les conteneurs vides (aucun enfant avec du texte)
-    return [el for el in result if any(child.text for child in el)]
-
-
-def is_neant(section: ET.Element) -> bool:
-    return xml_text(section, "neant").lower() == "true"
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Parsers par section DSP
-# ══════════════════════════════════════════════════════════════════════════════
-
-def parse_instruments_financiers(root: ET.Element) -> list[dict]:
-    """Actions, obligations, ETF, PEA, assurance-vie, OPCVM…"""
-    section = root.find(".//instrumentsFinanciersDto")
-    if section is None or is_neant(section):
-        return []
-    result = []
-    for item in items_of(section):
-        nature_id    = xml_text(item, "nature/id")    or xml_text(item, "typeInstrument/id")    or ""
-        nature_label = xml_text(item, "nature/label") or xml_text(item, "typeInstrument/label") or nature_id
-        valeur_str   = xml_text(item, "valeur") or xml_text(item, "valeurEstimee") or xml_text(item, "montant") or ""
-        entry = {
-            "nature":        nature_label or nature_id,
-            "nature_code":   nature_id,
-            "description":   xml_text(item, "description") or xml_text(item, "denomination") or xml_text(item, "libelle") or "",
-            "valeur_euro":   parse_montant(valeur_str),
-            "mode_detention": xml_text(item, "modeDetention/label") or xml_text(item, "modeDetention/id") or "",
-            "commentaire":   xml_text(item, "commentaire"),
-        }
-        nb = xml_text(item, "nombreTitres") or xml_text(item, "nbTitres")
-        if nb:
-            entry["nb_titres"] = nb
-        vu = xml_text(item, "valeurUnitaire")
-        if vu:
-            entry["valeur_unitaire_euro"] = parse_montant(vu)
-        if not entry["nature"] and not entry["description"] and entry["valeur_euro"] is None:
-            continue
-        result.append(entry)
-    return result
-
-
-def parse_participations_financieres(root: ET.Element) -> list[dict]:
-    """Parts dans des sociétés (SARL, SCI, SA non cotées���)."""
-    section = root.find(".//participationFinanciereDto")
-    if section is None or is_neant(section):
-        return []
-    result = []
-    for item in items_of(section):
-        nom_societe = xml_text(item, "nomSociete") or xml_text(item, "denomination") or ""
-        valeur_str  = xml_text(item, "valeurParts") or xml_text(item, "valeur") or xml_text(item, "montant") or ""
-        entry = {
-            "nom_societe":   nom_societe,
-            "nb_parts":      xml_text(item, "nbParts") or xml_text(item, "nombreParts") or "",
-            "valeur_euro":   parse_montant(valeur_str),
-            "pourcentage":   xml_text(item, "pourcentage") or xml_text(item, "tauxDetention") or "",
-            "mode_detention": xml_text(item, "modeDetention/label") or xml_text(item, "modeDetention/id") or "",
-            "objet_social":  xml_text(item, "objetSocial") or xml_text(item, "activite") or "",
-            "commentaire":   xml_text(item, "commentaire"),
-        }
-        if not entry["nom_societe"] and entry["valeur_euro"] is None:
-            continue
-        result.append(entry)
-    return result
-
-
-def parse_biens_immobiliers(root: ET.Element) -> list[dict]:
-    """Résidence principale, secondaire, biens locatifs, terrains, forêts…"""
-    # Plusieurs noms de section possibles selon la version du schéma
-    section = (
-        root.find(".//biensImmobiliersDto") or
-        root.find(".//bienImmobilierDto")   or
-        root.find(".//immobilierDto")
-    )
-    if section is None or is_neant(section):
-        return []
-    result = []
-    for item in items_of(section):
-        valeur_str = (
-            xml_text(item, "valeurVenale") or
-            xml_text(item, "valeur")       or
-            xml_text(item, "valeurEstimee") or
-            xml_text(item, "montant")      or ""
-        )
-        entry = {
-            "nature":          xml_text(item, "nature/label")  or xml_text(item, "nature/id")  or xml_text(item, "typeBien/label") or xml_text(item, "typeBien/id") or "",
-            "description":     xml_text(item, "description")   or xml_text(item, "adresse")    or xml_text(item, "localisation") or "",
-            "localisation":    xml_text(item, "localisation")  or xml_text(item, "commune")    or xml_text(item, "departement") or "",
-            "valeur_euro":     parse_montant(valeur_str),
-            "surface_m2":      xml_text(item, "surface")       or xml_text(item, "superficie") or "",
-            "mode_acquisition": xml_text(item, "modeAcquisition/label") or xml_text(item, "modeAcquisition/id") or "",
-            "mode_detention":  xml_text(item, "modeDetention/label") or xml_text(item, "modeDetention/id") or "",
-            "revenu_locatif_euro": parse_montant(xml_text(item, "revenuLocatif") or xml_text(item, "loyersAnnuels") or ""),
-            "commentaire":     xml_text(item, "commentaire"),
-        }
-        if not entry["nature"] and not entry["description"] and entry["valeur_euro"] is None:
-            continue
-        result.append(entry)
-    return result
-
-
-def parse_comptes_bancaires(root: ET.Element) -> list[dict]:
-    """Comptes courants, livrets, PEL, CEL, PEP…"""
-    section = (
-        root.find(".//comptesBancairesDto") or
-        root.find(".//compteBancaireDto")   or
-        root.find(".//liquiditesDto")
-    )
-    if section is None or is_neant(section):
-        return []
-    result = []
-    for item in items_of(section):
-        valeur_str = xml_text(item, "solde") or xml_text(item, "valeur") or xml_text(item, "montant") or ""
-        entry = {
-            "type_compte":  xml_text(item, "typeCompte/label") or xml_text(item, "typeCompte/id") or xml_text(item, "nature/label") or xml_text(item, "nature/id") or "",
-            "etablissement": xml_text(item, "etablissement") or xml_text(item, "banque") or "",
-            "solde_euro":   parse_montant(valeur_str),
-            "mode_detention": xml_text(item, "modeDetention/label") or xml_text(item, "modeDetention/id") or "",
-            "commentaire":  xml_text(item, "commentaire"),
-        }
-        if not entry["type_compte"] and entry["solde_euro"] is None:
-            continue
-        result.append(entry)
-    return result
-
-
-def parse_vehicules(root: ET.Element) -> list[dict]:
-    """Voitures, motos, bateaux, avions de tourisme…"""
-    section = (
-        root.find(".//vehiculesDto")  or
-        root.find(".//vehiculeDto")   or
-        root.find(".//biensVehicules")
-    )
-    if section is None or is_neant(section):
-        return []
-    result = []
-    for item in items_of(section):
-        valeur_str = xml_text(item, "valeur") or xml_text(item, "valeurEstimee") or xml_text(item, "montant") or ""
-        entry = {
-            "type_vehicule": xml_text(item, "typeVehicule/label") or xml_text(item, "typeVehicule/id") or xml_text(item, "nature/label") or xml_text(item, "nature/id") or "",
-            "description":   xml_text(item, "description") or xml_text(item, "marque") or xml_text(item, "modele") or "",
-            "annee":         xml_text(item, "annee") or xml_text(item, "dateAcquisition") or "",
-            "valeur_euro":   parse_montant(valeur_str),
-            "mode_detention": xml_text(item, "modeDetention/label") or xml_text(item, "modeDetention/id") or "",
-            "commentaire":   xml_text(item, "commentaire"),
-        }
-        if not entry["type_vehicule"] and not entry["description"] and entry["valeur_euro"] is None:
-            continue
-        result.append(entry)
-    return result
-
-
-def parse_biens_mobiliers(root: ET.Element) -> list[dict]:
-    """Meubles de valeur, œuvres d'art, bijoux, métaux précieux, chevaux de course…"""
-    section = (
-        root.find(".//autresBiensDto")      or
-        root.find(".//biensMobiliersDto")   or
-        root.find(".//biensValeurDto")      or
-        root.find(".//mobilierDto")
-    )
-    if section is None or is_neant(section):
-        return []
-    result = []
-    for item in items_of(section):
-        valeur_str = xml_text(item, "valeur") or xml_text(item, "valeurEstimee") or xml_text(item, "montant") or ""
-        entry = {
-            "nature":      xml_text(item, "nature/label") or xml_text(item, "nature/id") or xml_text(item, "typeBien/label") or xml_text(item, "typeBien/id") or "",
-            "description": xml_text(item, "description") or xml_text(item, "libelle") or "",
-            "valeur_euro": parse_montant(valeur_str),
-            "commentaire": xml_text(item, "commentaire"),
-        }
-        if not entry["nature"] and not entry["description"] and entry["valeur_euro"] is None:
-            continue
-        result.append(entry)
-    return result
-
-
-def parse_dettes(root: ET.Element) -> list[dict]:
-    """Emprunts immobiliers, crédits à la consommation, autres dettes…"""
-    section = (
-        root.find(".//dettesDto")   or
-        root.find(".//detteDto")    or
-        root.find(".//empruntsDto")
-    )
-    if section is None or is_neant(section):
-        return []
-    result = []
-    for item in items_of(section):
-        valeur_str = (
-            xml_text(item, "capitalRestantDu") or
-            xml_text(item, "montantRestant")   or
-            xml_text(item, "valeur")           or
-            xml_text(item, "montant")          or ""
-        )
-        entry = {
-            "nature":        xml_text(item, "nature/label")       or xml_text(item, "nature/id")  or xml_text(item, "objet") or "",
-            "creancier":     xml_text(item, "creancier")          or xml_text(item, "organisme")  or xml_text(item, "banque") or "",
-            "montant_euro":  parse_montant(valeur_str),
-            "taux":          xml_text(item, "taux")               or xml_text(item, "tauxInteret") or "",
-            "echeance":      xml_text(item, "echeance")           or xml_text(item, "dateEcheance") or "",
-            "commentaire":   xml_text(item, "commentaire"),
-        }
-        if not entry["nature"] and not entry["creancier"] and entry["montant_euro"] is None:
-            continue
-        result.append(entry)
-    return result
-
-
-def parse_revenus(root: ET.Element) -> list[dict]:
-    """Revenus professionnels, locatifs, mobiliers, jetons de présence, allocations…"""
-    section = (
-        root.find(".//revenusDto")        or
-        root.find(".//revenuDto")         or
-        root.find(".//revenusActiviteDto")
-    )
-    if section is None or is_neant(section):
-        return []
-    result = []
-    for item in items_of(section):
-        montant_str = (
-            xml_text(item, "montant")       or
-            xml_text(item, "valeur")        or
-            xml_text(item, "revenuAnnuel")  or
-            xml_text(item, "revenuNet")     or ""
-        )
-        entry = {
-            "nature":       xml_text(item, "nature/label")  or xml_text(item, "nature/id")  or xml_text(item, "typeRevenu/label") or xml_text(item, "typeRevenu/id") or "",
-            "source":       xml_text(item, "source")        or xml_text(item, "employeur")  or xml_text(item, "organisme") or "",
-            "montant_euro": parse_montant(montant_str),
-            "periodicite":  xml_text(item, "periodicite")   or xml_text(item, "frequence")  or "",
-            "commentaire":  xml_text(item, "commentaire"),
-        }
-        if not entry["nature"] and not entry["source"] and entry["montant_euro"] is None:
-            continue
-        result.append(entry)
-    return result
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Parsers par section DI
-# ══════════════════════════════════════════════════════════════════════════════
-
-def parse_activites_professionnelles(root: ET.Element) -> list[dict]:
-    """Fonctions et emplois rémunérés actuels (DI)."""
-    section = (
-        root.find(".//activitesProfessionnellesDto") or
-        root.find(".//activiteProfessionnelleDto")   or
-        root.find(".//fonctionsActuellesDto")
-    )
-    if section is None or is_neant(section):
-        return []
-    result = []
-    for item in items_of(section):
-        montant_str = xml_text(item, "remuneration") or xml_text(item, "revenu") or xml_text(item, "montant") or ""
-        entry = {
-            "employeur":     xml_text(item, "employeur")    or xml_text(item, "organisme")    or xml_text(item, "entreprise") or "",
-            "fonction":      xml_text(item, "fonction")     or xml_text(item, "poste")         or xml_text(item, "qualite") or "",
-            "date_debut":    xml_text(item, "dateDebut")    or xml_text(item, "dateNomination") or "",
-            "date_fin":      xml_text(item, "dateFin")      or "",
-            "remuneration_euro": parse_montant(montant_str),
-            "type_activite": xml_text(item, "typeActivite/label") or xml_text(item, "typeActivite/id") or "",
-            "commentaire":   xml_text(item, "commentaire"),
-        }
-        if not entry["employeur"] and not entry["fonction"]:
-            continue
-        result.append(entry)
-    return result
-
-
-def parse_activites_anterieures(root: ET.Element) -> list[dict]:
-    """Fonctions et emplois exercés dans les 5 dernières années (DI)."""
-    section = (
-        root.find(".//activitesAnterieuresDto")    or
-        root.find(".//activiteAnterieureDto")      or
-        root.find(".//fonctionsAnterieuresDto")
-    )
-    if section is None or is_neant(section):
-        return []
-    result = []
-    for item in items_of(section):
-        entry = {
-            "employeur":     xml_text(item, "employeur")  or xml_text(item, "organisme") or xml_text(item, "entreprise") or "",
-            "fonction":      xml_text(item, "fonction")   or xml_text(item, "poste")     or xml_text(item, "qualite") or "",
-            "date_debut":    xml_text(item, "dateDebut")  or "",
-            "date_fin":      xml_text(item, "dateFin")    or "",
-            "type_activite": xml_text(item, "typeActivite/label") or xml_text(item, "typeActivite/id") or "",
-            "commentaire":   xml_text(item, "commentaire"),
-        }
-        if not entry["employeur"] and not entry["fonction"]:
-            continue
-        result.append(entry)
-    return result
-
-
-def parse_mandats_elus(root: ET.Element) -> list[dict]:
-    """Mandats et fonctions électifs exercés (DI)."""
-    section = (
-        root.find(".//mandatsElectifsDto") or
-        root.find(".//mandatElectifDto")   or
-        root.find(".//mandatsDto")
-    )
-    if section is None or is_neant(section):
-        return []
-    result = []
-    for item in items_of(section):
-        montant_str = xml_text(item, "indemnite") or xml_text(item, "remuneration") or xml_text(item, "montant") or ""
-        entry = {
-            "mandat":       xml_text(item, "typeMandat/label") or xml_text(item, "typeMandat/id") or xml_text(item, "mandat") or "",
-            "collectivite": xml_text(item, "collectivite")     or xml_text(item, "organisme")     or xml_text(item, "institution") or "",
-            "date_debut":   xml_text(item, "dateDebut")        or "",
-            "date_fin":     xml_text(item, "dateFin")          or "",
-            "indemnite_euro": parse_montant(montant_str),
-            "commentaire":  xml_text(item, "commentaire"),
-        }
-        if not entry["mandat"] and not entry["collectivite"]:
-            continue
-        result.append(entry)
-    return result
-
-
-def parse_participations_organes(root: ET.Element) -> list[dict]:
-    """Participations à des organes délibérants, conseils d'administration, comités (DI)."""
-    section = (
-        root.find(".//participationsOrganeDto")     or
-        root.find(".//participationOrganeDto")      or
-        root.find(".//organesDirigeantsDto")
-    )
-    if section is None or is_neant(section):
-        return []
-    result = []
-    for item in items_of(section):
-        montant_str = xml_text(item, "remuneration") or xml_text(item, "jeton") or xml_text(item, "indemnite") or ""
-        entry = {
-            "organisme":    xml_text(item, "organisme")  or xml_text(item, "denomination") or "",
-            "fonction":     xml_text(item, "fonction")   or xml_text(item, "qualite")      or "",
-            "date_debut":   xml_text(item, "dateDebut")  or "",
-            "date_fin":     xml_text(item, "dateFin")    or "",
-            "remuneration_euro": parse_montant(montant_str),
-            "commentaire":  xml_text(item, "commentaire"),
-        }
-        if not entry["organisme"] and not entry["fonction"]:
-            continue
-        result.append(entry)
-    return result
-
-
-def parse_soutiens_associations(root: ET.Element) -> list[dict]:
-    """Activités bénévoles / soutien à des associations (DI)."""
-    section = (
-        root.find(".//soutiensAssociationsDto") or
-        root.find(".//soutienAssociationDto")   or
-        root.find(".//activitesBenevolesDto")
-    )
-    if section is None or is_neant(section):
-        return []
-    result = []
-    for item in items_of(section):
-        entry = {
-            "association":  xml_text(item, "association") or xml_text(item, "organisme") or xml_text(item, "denomination") or "",
-            "objet":        xml_text(item, "objet")       or xml_text(item, "activite")  or "",
-            "fonction":     xml_text(item, "fonction")    or xml_text(item, "qualite")   or "",
-            "commentaire":  xml_text(item, "commentaire"),
-        }
-        if not entry["association"] and not entry["objet"]:
-            continue
-        result.append(entry)
-    return result
-
-
-def parse_autres_liens_interets(root: ET.Element) -> list[dict]:
-    """Autres liens susceptibles de créer un conflit d'intérêts (DI)."""
-    section = (
-        root.find(".//autresLiensInteretsDto") or
-        root.find(".//autreLienInteretDto")    or
-        root.find(".//liensInteretsDto")
-    )
-    if section is None or is_neant(section):
-        return []
-    result = []
-    for item in items_of(section):
-        entry = {
-            "nature":      xml_text(item, "nature/label") or xml_text(item, "nature/id") or xml_text(item, "typeInteraction/label") or "",
-            "description": xml_text(item, "description")  or xml_text(item, "libelle")   or "",
-            "commentaire": xml_text(item, "commentaire"),
-        }
-        if not entry["nature"] and not entry["description"]:
-            continue
-        result.append(entry)
-    return result
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Parser principal : toutes sections d'une déclaration XML
-# ══════════════════════════════════════════════════════════════════════════════
-
-def parse_declaration_xml(xml_bytes: bytes, url: str) -> dict:
+def extract_declaration_data(decl_element: ET.Element) -> dict:
     """
-    Parser un XML de déclaration HATVP et extraire TOUTES les données disponibles.
-    Retourne un dict structuré avec les sections triées.
+    Extraire TOUTES les données d'un élément <declaration> XML
+    en parcourant récursivement toutes les sections.
     """
-    try:
-        root = ET.fromstring(xml_bytes)
-    except ET.ParseError as exc:
-        print(f"    ⚠ XML invalide ({exc}) : {url}")
-        return {}
-
-    # ── Métadonnées générales ──────────────────────────────────────────────────
-    type_decl_id    = xml_text(root, "general/typeDeclaration/id")    or ""
-    type_decl_label = xml_text(root, "general/typeDeclaration/label") or type_decl_id
-    date_depot      = xml_text(root, "dateDepot")
-    uuid            = xml_text(root, "uuid")
-    declarant_nom   = xml_text(root, "general/declarant/nom")
-    declarant_prenom= xml_text(root, "general/declarant/prenom")
-    qualite         = xml_text(root, "general/qualiteDeclarant")
-    organe          = xml_text(root, "general/organe/labelOrgane")
-    mandat          = xml_text(root, "general/qualiteMandat/labelTypeMandat")
-
     result = {
-        "uuid":                    uuid,
-        "url_xml":                 url,
-        "type_declaration":        type_decl_id,
-        "type_declaration_label":  type_decl_label,
-        "date_depot":              date_depot,
-        "declarant":               f"{declarant_prenom} {declarant_nom}".strip(),
-        "qualite":                 qualite,
-        "organe":                  organe,
-        "mandat":                  mandat,
-        # ── Patrimoine (DSP) ───────────────────────────────────────────────────
-        "instruments_financiers":      [],   # actions, ETF, PEA, assurance-vie…
-        "participations_financieres":  [],   # parts dans des sociétés
-        "biens_immobiliers":           [],   # résidence, locatif, terrain…
-        "comptes_bancaires":           [],   # courant, livret, PEL…
-        "vehicules":                   [],   # voiture, bateau, avion…
-        "biens_mobiliers_valeur":      [],   # œuvres d'art, bijoux…
-        "dettes":                      [],   # emprunts, crédits
-        "revenus":                     [],   # salaires, revenus locatifs…
-        # ── Intérêts (DI) ─────────────────────────────────────────────────────
-        "activites_professionnelles":  [],   # emplois actuels
-        "activites_anterieures":       [],   # emplois 5 dernières années
-        "mandats_electifs":            [],   # mandats & fonctions électives
-        "participations_organes":      [],   # CA, comités, conseils…
-        "soutiens_associations":       [],   # bénévolat
-        "autres_liens_interets":       [],   # autres conflits potentiels
+        # Métadonnées
+        "type_declaration":       xml_text(decl_element, ".//general/typeDeclaration/id") or xml_text(decl_element, "typeDeclaration/id") or "",
+        "type_declaration_label": xml_text(decl_element, ".//general/typeDeclaration/label") or xml_text(decl_element, "typeDeclaration/label") or "",
+        "date_depot":             xml_text(decl_element, "dateDepot") or xml_text(decl_element, ".//dateDepot") or "",
+        "date_publication":       xml_text(decl_element, "datePublication") or "",
+        "uuid":                   xml_text(decl_element, "uuid") or xml_text(decl_element, ".//uuid") or "",
+        "declarant_nom":          xml_text(decl_element, ".//general/declarant/nom") or xml_text(decl_element, ".//declarant/nom") or "",
+        "declarant_prenom":       xml_text(decl_element, ".//general/declarant/prenom") or xml_text(decl_element, ".//declarant/prenom") or "",
+        "qualite":                xml_text(decl_element, ".//general/qualiteDeclarant") or xml_text(decl_element, ".//qualite") or "",
+        "organe":                 xml_text(decl_element, ".//general/organe/labelOrgane") or xml_text(decl_element, ".//organe") or "",
+        "mandat":                 xml_text(decl_element, ".//general/qualiteMandat/labelTypeMandat") or "",
     }
 
-    # ── Sections patrimoniales (DSP / DSPM) ───────────────────────────────────
-    result["instruments_financiers"]     = parse_instruments_financiers(root)
-    result["participations_financieres"] = parse_participations_financieres(root)
-    result["biens_immobiliers"]          = parse_biens_immobiliers(root)
-    result["comptes_bancaires"]          = parse_comptes_bancaires(root)
-    result["vehicules"]                  = parse_vehicules(root)
-    result["biens_mobiliers_valeur"]     = parse_biens_mobiliers(root)
-    result["dettes"]                     = parse_dettes(root)
-    result["revenus"]                    = parse_revenus(root)
+    # Initialiser toutes les sections connues
+    for section_name in ALL_OUTPUT_SECTIONS:
+        result[section_name] = []
 
-    # ── Sections intérêts (DI / DIM) ──────────────────────────────────────────
-    result["activites_professionnelles"] = parse_activites_professionnelles(root)
-    result["activites_anterieures"]      = parse_activites_anterieures(root)
-    result["mandats_electifs"]           = parse_mandats_elus(root)
-    result["participations_organes"]     = parse_participations_organes(root)
-    result["soutiens_associations"]      = parse_soutiens_associations(root)
-    result["autres_liens_interets"]      = parse_autres_liens_interets(root)
+    # Parcourir TOUS les enfants (et descendants) de la déclaration
+    # pour trouver les sections connues
+    for section_tag, output_key in KNOWN_SECTIONS.items():
+        for section_el in decl_element.iter(section_tag):
+            parsed = element_to_dict(section_el)
+            items = flatten_section_items(parsed)
+            result[output_key].extend(items)
+
+    # FALLBACK : parcourir aussi récursivement pour trouver des sections
+    # qu'on n'a pas dans notre mapping mais qui contiennent des items
+    seen_tags = set(KNOWN_SECTIONS.keys()) | {"general", "uuid", "dateDepot",
+                "datePublication", "declaration", "declarations"}
+    for child in decl_element:
+        tag = child.tag
+        if tag in seen_tags:
+            continue
+        # Vérifier si cette section contient des items
+        if child.find("items") is not None or child.find(".//items") is not None:
+            parsed = element_to_dict(child)
+            items = flatten_section_items(parsed)
+            if items:
+                # Stocker dans "autres_activites" par défaut
+                safe_key = re.sub(r"Dto$", "", tag)
+                safe_key = re.sub(r"([A-Z])", r"_\1", safe_key).lower().strip("_")
+                # Utiliser la section existante la plus proche ou créer
+                if safe_key not in result:
+                    result[safe_key] = []
+                    # L'ajouter aussi aux sections connues pour l'affichage
+                    if safe_key not in ALL_OUTPUT_SECTIONS:
+                        ALL_OUTPUT_SECTIONS.append(safe_key)
+                result[safe_key].extend(items)
 
     return result
 
@@ -714,197 +540,208 @@ def parse_declaration_xml(xml_bytes: bytes, url: str) -> dict:
 # Orchestration par élu
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Toutes les clés de sections extraites (dans l'ordre d'affichage)
-ALL_SECTIONS = [
-    "instruments_financiers",
-    "participations_financieres",
-    "biens_immobiliers",
-    "comptes_bancaires",
-    "vehicules",
-    "biens_mobiliers_valeur",
-    "dettes",
-    "revenus",
-    "activites_professionnelles",
-    "activites_anterieures",
-    "mandats_electifs",
-    "participations_organes",
-    "soutiens_associations",
-    "autres_liens_interets",
-]
-
-SECTION_LABELS = {
-    "instruments_financiers":     "📈 Instruments financiers",
-    "participations_financieres": "🏢 Participations dans des sociétés",
-    "biens_immobiliers":          "🏠 Biens immobiliers",
-    "comptes_bancaires":          "🏦 Comptes bancaires & épargne",
-    "vehicules":                  "🚗 Véhicules",
-    "biens_mobiliers_valeur":     "💎 Biens mobiliers de valeur",
-    "dettes":                     "📉 Dettes & emprunts",
-    "revenus":                    "💶 Revenus",
-    "activites_professionnelles": "💼 Activités professionnelles actuelles",
-    "activites_anterieures":      "📋 Activités professionnelles antérieures",
-    "mandats_electifs":           "🗳️  Mandats électifs",
-    "participations_organes":     "🏛️  Participations à des organes",
-    "soutiens_associations":      "🤝 Soutiens associatifs",
-    "autres_liens_interets":      "⚠️  Autres liens d'intérêts",
-}
-
-
-def fetch_hatvp_data_for_elu(
+def fetch_data_for_elu(
     elu: dict,
-    index: list[dict],
+    xml_index: dict[str, list[ET.Element]],
+    csv_index: list[dict],
     force: bool,
     dry_run: bool,
     delay: float,
 ) -> dict | None:
     """
-    Récupérer l'intégralité des données HATVP pour un élu (DSP + DI).
-    Retourne un dict consolidé ou None si aucune déclaration trouvée.
+    Extraire TOUTES les données HATVP d'un élu.
+    Cherche d'abord dans le XML global, sinon tente les XMLs individuels.
     """
     prenom = elu.get("prenom", "").strip()
     nom    = elu.get("nom",    "").strip()
     if not prenom or not nom:
         return None
 
-    declarations_rows = find_declarations_for_elu(index, prenom, nom)
-    if not declarations_rows:
+    result = {
+        "prenom":                prenom,
+        "nom":                   nom,
+        "scraped_at":            datetime.utcnow().isoformat() + "Z",
+        "declarations_trouvees": 0,
+        "declarations":          [],
+    }
+    for section_name in ALL_OUTPUT_SECTIONS:
+        result[section_name] = []
+
+    # ── Stratégie 1 : chercher dans le XML global ─────────────────────────────
+    key = normalize_name(f"{prenom} {nom}")
+    xml_decls = xml_index.get(key, [])
+
+    if xml_decls:
+        result["declarations_trouvees"] = len(xml_decls)
+        print(f"    ✓ {len(xml_decls)} déclaration(s) dans le XML global")
+
+        for decl_el in xml_decls:
+            if dry_run:
+                result["declarations"].append({"source": "xml_global", "dry_run": True})
+                continue
+
+            parsed = extract_declaration_data(decl_el)
+
+            # Fusionner les sections
+            for section_name in list(set(ALL_OUTPUT_SECTIONS) | set(parsed.keys())):
+                if section_name in (
+                    "type_declaration", "type_declaration_label", "date_depot",
+                    "date_publication", "uuid", "declarant_nom", "declarant_prenom",
+                    "qualite", "organe", "mandat",
+                ):
+                    continue
+                items = parsed.get(section_name, [])
+                if isinstance(items, list):
+                    if section_name not in result:
+                        result[section_name] = []
+                    result[section_name].extend(items)
+
+            result["declarations"].append({
+                "source":     "xml_global",
+                "type":       parsed.get("type_declaration", ""),
+                "label":      parsed.get("type_declaration_label", ""),
+                "date_depot": parsed.get("date_depot", ""),
+                "uuid":       parsed.get("uuid", ""),
+                "qualite":    parsed.get("qualite", ""),
+                "organe":     parsed.get("organe", ""),
+            })
+
+        return result
+
+    # ── Stratégie 2 : XMLs individuels via le CSV ─────────────────────────────
+    csv_rows = find_csv_rows_for_elu(csv_index, prenom, nom)
+    if not csv_rows:
         print(f"    ✗ Aucune déclaration HATVP trouvée pour {prenom} {nom}")
         return None
 
-    print(f"    ✓ {len(declarations_rows)} déclaration(s) trouvée(s)")
+    result["declarations_trouvees"] = len(csv_rows)
+    print(f"    ✓ {len(csv_rows)} entrée(s) CSV — fallback XMLs individuels")
 
-    # Prendre la DSP la plus récente et la DI la plus récente
-    dsp_row = next((r for r in declarations_rows if get_declaration_type(r) in DSP_TYPES), None)
-    di_row  = next((r for r in declarations_rows if get_declaration_type(r) in DI_TYPES),  None)
-
-    result = {
-        "prenom":               prenom,
-        "nom":                  nom,
-        "scraped_at":           datetime.utcnow().isoformat() + "Z",
-        "declarations_trouvees": len(declarations_rows),
-        "declarations":         [],
-    }
-    # Initialiser toutes les sections à vide
-    for section in ALL_SECTIONS:
-        result[section] = []
-
-    for row, label in [(dsp_row, "DSP"), (di_row, "DI")]:
-        if row is None:
+    # Prendre les plus récentes : 1 DSP + 1 DI
+    fetched_types = set()
+    for csv_row in csv_rows:
+        doc_type = (csv_row.get("type_document") or "").strip().upper()
+        if doc_type not in ALL_DOC_TYPES:
+            continue
+        # Éviter les doublons de même catégorie
+        category = "DSP" if doc_type in DSP_TYPES else "DI"
+        if category in fetched_types:
             continue
 
-        xml_url = get_xml_url(row)
+        xml_url = get_individual_xml_url(csv_row)
         if not xml_url:
-            print(f"    ⚠ URL XML introuvable pour la {label} de {prenom} {nom}")
             continue
 
-        decl_type  = get_declaration_type(row)
-        date_depot = row.get("dateDepot") or row.get("DateDepot") or "?"
-        print(f"    🔄 {label} ({decl_type}, {date_depot}) : {xml_url}")
+        print(f"    🔄 {doc_type} : {xml_url}")
 
         if dry_run:
-            result["declarations"].append({"type": decl_type, "url": xml_url, "dry_run": True})
+            result["declarations"].append({"source": "xml_individuel", "type": doc_type, "url": xml_url, "dry_run": True})
+            fetched_types.add(category)
             continue
 
         filename   = xml_url.split("/")[-1]
         cache_path = os.path.join(CACHE_DIR, "xmls", filename)
-        xml_bytes  = download_xml(xml_url, cache_path, force=force, delay=delay)
+        xml_bytes  = download_file(xml_url, cache_path, force=force, max_age_h=168, delay=delay)
+
         if not xml_bytes:
             print(f"    ✗ Impossible de télécharger {xml_url}")
             continue
 
-        parsed = parse_declaration_xml(xml_bytes, xml_url)
-        if not parsed:
+        try:
+            decl_root = ET.fromstring(xml_bytes)
+        except ET.ParseError as exc:
+            print(f"    ⚠ XML invalide ({exc})")
             continue
 
-        # Fusionner toutes les sections extraites
-        for section in ALL_SECTIONS:
-            result[section].extend(parsed.get(section, []))
+        parsed = extract_declaration_data(decl_root)
+
+        for section_name in list(set(ALL_OUTPUT_SECTIONS) | set(parsed.keys())):
+            if section_name in (
+                "type_declaration", "type_declaration_label", "date_depot",
+                "date_publication", "uuid", "declarant_nom", "declarant_prenom",
+                "qualite", "organe", "mandat",
+            ):
+                continue
+            items = parsed.get(section_name, [])
+            if isinstance(items, list):
+                if section_name not in result:
+                    result[section_name] = []
+                result[section_name].extend(items)
 
         result["declarations"].append({
-            "type":       parsed.get("type_declaration"),
-            "label":      parsed.get("type_declaration_label"),
-            "date_depot": parsed.get("date_depot"),
-            "uuid":       parsed.get("uuid"),
+            "source":     "xml_individuel",
+            "type":       parsed.get("type_declaration", ""),
+            "label":      parsed.get("type_declaration_label", ""),
+            "date_depot": parsed.get("date_depot", ""),
+            "uuid":       parsed.get("uuid", ""),
             "url":        xml_url,
-            "qualite":    parsed.get("qualite"),
-            "organe":     parsed.get("organe"),
+            "qualite":    parsed.get("qualite", ""),
+            "organe":     parsed.get("organe", ""),
         })
+        fetched_types.add(category)
 
     return result
 
 
 def build_resume_hatvp(data: dict) -> dict:
-    """Construire un résumé compact (pour elus.json) depuis les données brutes."""
+    """Construire un résumé compact pour elus.json."""
 
-    def total_valeur(items: list[dict], key: str = "valeur_euro") -> float:
-        return sum(i[key] for i in items if i.get(key) is not None)
+    def count_and_total(items: list[dict]) -> tuple[int, float]:
+        n = len(items)
+        total = 0.0
+        for i in items:
+            for k in ("valeur_euro", "solde_euro", "montant_euro",
+                       "valeur", "solde", "montant", "valeurParts",
+                       "capitalRestantDu", "remuneration_euro", "indemnite_euro"):
+                v = i.get(k)
+                if v is not None:
+                    if isinstance(v, str):
+                        v = parse_montant(v)
+                    if isinstance(v, (int, float)):
+                        total += v
+                        break
+        return n, total
 
-    instruments    = data.get("instruments_financiers",     [])
-    participations = data.get("participations_financieres", [])
-    immobilier     = data.get("biens_immobiliers",          [])
-    comptes        = data.get("comptes_bancaires",          [])
-    vehicules      = data.get("vehicules",                  [])
-    mobilier       = data.get("biens_mobiliers_valeur",     [])
-    dettes         = data.get("dettes",                     [])
-    revenus        = data.get("revenus",                    [])
-
-    valeur_instruments    = total_valeur(instruments)
-    valeur_participations = total_valeur(participations)
-    valeur_immobilier     = total_valeur(immobilier)
-    valeur_comptes        = total_valeur(comptes, "solde_euro")
-    valeur_vehicules      = total_valeur(vehicules)
-    valeur_mobilier       = total_valeur(mobilier)
-    total_dettes          = total_valeur(dettes, "montant_euro")
-    total_revenus         = total_valeur(revenus, "montant_euro")
-
-    actif_brut = (
-        valeur_instruments    +
-        valeur_participations +
-        valeur_immobilier     +
-        valeur_comptes        +
-        valeur_vehicules      +
-        valeur_mobilier
-    )
-
-    # Regrouper les instruments par nature
-    natures_instruments: dict[str, int] = {}
-    for i in instruments:
-        n = i.get("nature", "Autre")
-        natures_instruments[n] = natures_instruments.get(n, 0) + 1
-
-    return {
-        # Comptages
-        "nb_instruments_financiers":      len(instruments),
-        "nb_participations_societes":     len(participations),
-        "nb_biens_immobiliers":           len(immobilier),
-        "nb_comptes_bancaires":           len(comptes),
-        "nb_vehicules":                   len(vehicules),
-        "nb_biens_mobiliers_valeur":      len(mobilier),
-        "nb_dettes":                      len(dettes),
-        "nb_sources_revenus":             len(revenus),
-        "nb_activites_pro":               len(data.get("activites_professionnelles", [])),
-        "nb_activites_anterieures":       len(data.get("activites_anterieures",      [])),
-        "nb_mandats_electifs":            len(data.get("mandats_electifs",           [])),
-        "nb_participations_organes":      len(data.get("participations_organes",     [])),
-        "nb_soutiens_associations":       len(data.get("soutiens_associations",      [])),
-        "nb_autres_liens_interets":       len(data.get("autres_liens_interets",      [])),
-        # Valorisations
-        "valeur_instruments_euro":        valeur_instruments,
-        "valeur_participations_euro":     valeur_participations,
-        "valeur_immobilier_euro":         valeur_immobilier,
-        "valeur_comptes_euro":            valeur_comptes,
-        "valeur_vehicules_euro":          valeur_vehicules,
-        "valeur_mobilier_euro":           valeur_mobilier,
-        "total_actif_brut_euro":          actif_brut,
-        "total_dettes_euro":              total_dettes,
-        "patrimoine_net_euro":            actif_brut - total_dettes,
-        "total_revenus_euro":             total_revenus,
-        # Détail instruments
-        "types_instruments":              natures_instruments,
-        # Méta
-        "nb_declarations_hatvp":          data.get("declarations_trouvees", 0),
-        "hatvp_scraped_at":               data.get("scraped_at", ""),
+    resume = {
+        "nb_declarations_hatvp": data.get("declarations_trouvees", 0),
+        "hatvp_scraped_at":      data.get("scraped_at", ""),
     }
+
+    patrimoine_brut = 0.0
+    total_dettes    = 0.0
+    total_revenus   = 0.0
+
+    for section_name in ALL_OUTPUT_SECTIONS:
+        items = data.get(section_name, [])
+        if not items:
+            continue
+        n, total = count_and_total(items)
+        resume[f"nb_{section_name}"] = n
+        if total:
+            resume[f"valeur_{section_name}_euro"] = total
+
+        # Calculer patrimoine net
+        if section_name == "dettes":
+            total_dettes += total
+        elif section_name == "revenus":
+            total_revenus += total
+        elif section_name not in (
+            "activites_professionnelles", "activites_anterieures",
+            "mandats_electifs", "participations_organes",
+            "fonctions_benevoles", "autres_liens_interets",
+            "autres_activites", "fonctions_gouvernementales",
+            "fonctions_consultatives",
+        ):
+            patrimoine_brut += total
+
+    if patrimoine_brut or total_dettes:
+        resume["total_actif_brut_euro"] = patrimoine_brut
+        resume["total_dettes_euro"]     = total_dettes
+        resume["patrimoine_net_euro"]   = patrimoine_brut - total_dettes
+    if total_revenus:
+        resume["total_revenus_euro"] = total_revenus
+
+    return resume
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -922,36 +759,35 @@ def load_elus() -> list[dict]:
 def save_elus(elus: list[dict]) -> None:
     with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
         json.dump(elus, f, ensure_ascii=False, indent=2)
-    print(f"✓ {OUTPUT_JSON} mis à jour")
+    print(f"✓ {OUTPUT_JSON} mis à jour ({len(elus)} élus)")
 
 
 def find_elu_by_name(elus: list[dict], query: str) -> dict | None:
-    q = query.lower()
+    q = normalize_name(query)
     for e in elus:
-        full = f"{e.get('prenom', '')} {e.get('nom', '')}".lower()
-        if q in full:
+        full = normalize_name(f"{e.get('prenom', '')} {e.get('nom', '')}")
+        if q in full or full in q:
             return e
     return None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Affichage test
+# Affichage
 # ══════════════════════════════════════════════════════════════════════════════
 
-def print_section_test(result: dict, section: str, nb: int = 5) -> None:
-    items = result.get(section, [])
+def print_section(data: dict, section: str, nb: int = 5) -> None:
+    items = data.get(section, [])
     if not items:
         return
-    label = SECTION_LABELS.get(section, section)
+    label = SECTION_LABELS.get(section, f"📄 {section}")
     print(f"\n  {label} ({len(items)}) :")
     for item in items[:nb]:
-        # Afficher les champs non vides sur une ligne
         parts = []
         for k, v in item.items():
-            if v is not None and v != "" and k != "commentaire":
+            if v and k not in ("commentaire", "_items"):
                 if isinstance(v, float):
                     parts.append(f"{k}={v:,.0f} €")
-                else:
+                elif isinstance(v, str) and len(v) < 60:
                     parts.append(f"{k}={v}")
         print(f"    • {' | '.join(parts[:5])}")
     if len(items) > nb:
@@ -967,7 +803,8 @@ def main():
 
     print("=" * 65)
     print("💰 SCRAPER HATVP — PATRIMOINE COMPLET (DSP + DI)")
-    print("   Sources : liste.csv + XMLs https://www.hatvp.fr/livraison/")
+    print("   XML global  : declarations.xml")
+    print("   Index CSV   : liste.csv")
     if args.dry_run:
         print("   ⚠ MODE DRY-RUN — aucun fichier ne sera écrit")
     print("=" * 65)
@@ -975,11 +812,42 @@ def main():
     os.makedirs(CACHE_DIR, exist_ok=True)
     os.makedirs(os.path.join(CACHE_DIR, "xmls"), exist_ok=True)
 
-    print("\n📥 Chargement de l'index HATVP…")
-    try:
-        index = load_hatvp_index(force_refresh=args.refresh_index, delay=args.delay)
-    except RuntimeError as exc:
-        print(f"❌ {exc}")
+    # ── Charger le CSV index ───────────────────────────────────────────────────
+    print("\n📥 Chargement de l'index CSV HATVP…")
+    csv_index = load_hatvp_index(force_refresh=args.refresh_index, delay=args.delay)
+
+    if args.dump_csv_columns and csv_index:
+        print(f"\n  📋 Colonnes CSV : {list(csv_index[0].keys())}")
+        print(f"  📋 Exemple ligne 1 :")
+        for k, v in csv_index[0].items():
+            print(f"    {k:25s} = {v}")
+        print(f"  📋 Exemple ligne 2 :")
+        for k, v in csv_index[1].items():
+            print(f"    {k:25s} = {v}")
+        return
+
+    # ── Charger le XML global ──────────────────────────────────────────────────
+    print("\n📥 Chargement du XML global HATVP…")
+    xml_root = load_declarations_xml(force_refresh=args.refresh_xml, delay=args.delay)
+
+    if args.dump_xml_sample and xml_root is not None:
+        print(f"\n  📋 Structure XML racine : <{xml_root.tag}> ({len(list(xml_root))} enfants)")
+        for i, child in enumerate(xml_root):
+            if i >= 3:
+                break
+            print(f"\n  ── Déclaration {i+1} : <{child.tag}>")
+            snippet = ET.tostring(child, encoding="unicode")[:3000]
+            print(snippet)
+        return
+
+    # Construire l'index par nom
+    xml_index: dict[str, list[ET.Element]] = {}
+    if xml_root is not None:
+        print("\n🔨 Construction de l'index par nom…")
+        xml_index = build_xml_index(xml_root)
+
+    if not xml_index and not csv_index:
+        print("❌ Aucune donnée HATVP disponible (ni XML ni CSV)")
         return
 
     # ── Mode test ──────────────────────────────────────────────────────────────
@@ -992,8 +860,9 @@ def main():
             elu = {"id": "test", "prenom": parts[0], "nom": " ".join(parts[1:])}
         print(f"  Profil : {elu.get('prenom')} {elu.get('nom')}")
 
-        result = fetch_hatvp_data_for_elu(
-            elu, index, force=True, dry_run=args.dry_run, delay=args.delay
+        result = fetch_data_for_elu(
+            elu, xml_index, csv_index,
+            force=True, dry_run=args.dry_run, delay=args.delay
         )
 
         if result:
@@ -1001,11 +870,21 @@ def main():
             print("✅ RÉSULTAT COMPLET")
             print(f"{'=' * 65}")
             print(f"  Déclarations trouvées : {result['declarations_trouvees']}")
-            total_items = sum(len(result.get(s, [])) for s in ALL_SECTIONS)
+
+            total_items = sum(
+                len(result.get(s, []))
+                for s in ALL_OUTPUT_SECTIONS
+                if isinstance(result.get(s), list)
+            )
             print(f"  Total éléments extraits : {total_items}")
 
-            for section in ALL_SECTIONS:
-                print_section_test(result, section)
+            for section in ALL_OUTPUT_SECTIONS:
+                print_section(result, section)
+
+            # Sections dynamiques (non prédéfinies)
+            for k, v in result.items():
+                if isinstance(v, list) and v and k not in ALL_OUTPUT_SECTIONS and k != "declarations":
+                    print_section(result, k)
 
             print(f"\n  📊 Résumé patrimoine :")
             resume = build_resume_hatvp(result)
@@ -1026,6 +905,7 @@ def main():
     total     = len(elus)
     done      = 0
     not_found = 0
+    with_data = 0
     updated: dict[str, dict] = {}
 
     for i, elu in enumerate(elus, 1):
@@ -1034,8 +914,9 @@ def main():
         elu_id = elu.get("id",     f"elu-{i}")
         print(f"\n[{i}/{total}] {prenom} {nom}")
 
-        result = fetch_hatvp_data_for_elu(
-            elu, index, force=args.force, dry_run=args.dry_run, delay=args.delay
+        result = fetch_data_for_elu(
+            elu, xml_index, csv_index,
+            force=args.force, dry_run=args.dry_run, delay=args.delay
         )
 
         if result is None:
@@ -1045,30 +926,34 @@ def main():
             resume = build_resume_hatvp(result)
             updated[elu_id] = resume
 
-            total_items = sum(len(result.get(s, [])) for s in ALL_SECTIONS)
+            total_items = sum(
+                len(result.get(s, []))
+                for s in ALL_OUTPUT_SECTIONS
+                if isinstance(result.get(s), list)
+            )
+
             if total_items:
-                # Afficher un résumé compact par section non vide
+                with_data += 1
                 summary_parts = [
                     f"{len(result[s])} {s.replace('_', ' ')}"
-                    for s in ALL_SECTIONS if result.get(s)
+                    for s in ALL_OUTPUT_SECTIONS
+                    if isinstance(result.get(s), list) and result.get(s)
                 ]
                 print(f"  ✓ {total_items} éléments : {', '.join(summary_parts)}")
             else:
                 print(f"  ○ Déclarations trouvées mais aucun élément déclaré")
 
-            # Sauvegarder le détail complet dans un fichier séparé
+            # Sauvegarder le détail complet
             if not args.dry_run:
                 detail_path = os.path.join(CACHE_DIR, f"{elu_id}.json")
                 with open(detail_path, "w", encoding="utf-8") as f:
                     json.dump(result, f, ensure_ascii=False, indent=2)
 
-        time.sleep(args.delay)
-
-    # ── Mettre à jour elus.json ────────────────────────────────────────────────
+    # ���─ Mettre à jour elus.json ────────────────────────────────────────────────
     if not args.dry_run and updated:
         all_elus = load_elus()
         for e in all_elus:
-            if e["id"] in updated:
+            if e.get("id") in updated:
                 e["hatvp"] = updated[e["id"]]
         save_elus(all_elus)
 
@@ -1076,8 +961,9 @@ def main():
     print("📊 RAPPORT FINAL")
     print("=" * 65)
     print(f"  Total traités              : {total}")
-    print(f"  ✓ Données extraites        : {done}")
-    print(f"  ✗ Non trouvés dans HATVP   : {not_found}")
+    print(f"  ✓ Trouvés dans HATVP       : {done}")
+    print(f"  ✓ Avec données financières : {with_data}")
+    print(f"  ✗ Non trouvés              : {not_found}")
     print(f"  Détails dans               : {CACHE_DIR}/")
     print("=" * 65)
 
