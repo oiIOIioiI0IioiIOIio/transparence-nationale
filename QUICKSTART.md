@@ -1,179 +1,225 @@
-# 🚀 Guide de Démarrage Rapide
+# đ Guide de DĂ©marrage Rapide - Transparence Nationale v2.0
 
-Guide étape par étape pour lancer **Transparence Nationale** en 5 minutes.
+## đ„ Installation (5 minutes)
 
-## Prérequis
-
-Assurez-vous d'avoir installé :
-- ✅ **Node.js 18+** ([Télécharger](https://nodejs.org/))
-- ✅ **npm** ou **yarn**
-- ✅ **Git** ([Télécharger](https://git-scm.com/))
-
-Vérifiez vos versions :
+### 1. PrĂ©requis
+VĂ©rifiez que vous avez :
 ```bash
-node --version   # doit être >= 18.0.0
-npm --version    # doit être >= 9.0.0
+node --version   # >= 18.0.0
+npm --version    # >= 9.0.0
 ```
 
-## Installation en 3 Étapes
+Si non installĂ© : [TĂ©lĂ©charger Node.js](https://nodejs.org/)
 
-### 1️⃣ Cloner le Projet
-
+### 2. Installation
 ```bash
-# Via HTTPS
-git clone https://github.com/votre-username/transparence-nationale.git
+# Extraire l'archive ou cloner le repo
+cd transparence-nationale-v2
 
-# Ou via SSH
-git clone git@github.com:votre-username/transparence-nationale.git
-
-# Entrer dans le dossier
-cd transparence-nationale
-```
-
-### 2️⃣ Installer les Dépendances
-
-```bash
+# Installer les dĂ©pendances
 npm install
-# ou
-yarn install
 ```
 
-⏱️ Durée : ~2 minutes
-
-### 3️⃣ Lancer le Serveur
-
+### 3. Lancer le site
 ```bash
 npm run dev
-# ou
-yarn dev
 ```
 
-🎉 **C'est prêt !** Ouvrez http://localhost:3000
+đ **C'est prĂȘt !** Ouvrez http://localhost:3000
 
-## Structure Rapide
+## âš NouveautĂ©s v2.0
+
+### Interface
+- â **Mode nuit** â Bouton dans le header (persiste aprĂšs rechargement)
+- â **Chargement progressif** â 20 Ă©lus au dĂ©part, puis bouton "AccĂ©der aux donnĂ©es complĂštes"
+- â **Sans photos** â Focus sur les donnĂ©es, site ultra-lĂ©ger
+- â **Mobile-first** â OptimisĂ© pour smartphone et desktop
+
+### DonnĂ©es enrichies
+- â **Champs HATVP dĂ©taillĂ©s** â Instruments financiers, participations
+- â **7 modes de tri** â Nom, patrimoine, revenus, immobilier, placements, instruments, participations
+- â **Recherche avancĂ©e** â Par nom, fonction, rĂ©gion, mandats
+
+### Performance
+- â **Animations optimisĂ©es** â Framer Motion avec delays progressifs
+- â **Bundle lĂ©ger** â Pas de dĂ©pendances inutiles
+- â **SEO optimisĂ©** â Metadata, structure sĂ©mantique
+
+## đ Structure des fichiers
 
 ```
-📁 transparence-nationale/
-├── 📁 src/app/          → Pages Next.js
-├── 📁 src/components/   → Composants React
-├── 📁 src/hooks/        → Custom Hooks
-├── 📁 public/data/      → Données JSON
-└── 📁 public/photos/    → Photos élus
+transparence-nationale-v2/
+âââ src/
+â   âââ app/
+â   â   âââ page.tsx              â Page d'accueil avec explication
+â   â   âââ layout.tsx            â Layout avec Header et Footer
+â   â   âââ globals.css           â Styles + mode nuit
+â   â   âââ profils/[id]/
+â   â       âââ page.tsx          â Page profil dĂ©taillĂ©e
+â   âââ components/
+â   â   âââ Header.tsx            â Header avec bouton mode nuit
+â   â   âââ PersonCard.tsx        â Carte Ă©lu (sans photo)
+â   â   âââ SearchBar.tsx         â Recherche + tri avancĂ©
+â   âââ hooks/
+â   â   âââ useElus.ts            â Store Zustand avec Ă©tat global
+â   âââ lib/
+â       âââ types.ts              â Types TypeScript complets
+âââ public/
+â   âââ data/
+â       âââ elus.json             â Base de donnĂ©es (exemple fourni)
+âââ package.json                  â DĂ©pendances
+âââ next.config.js                â Config Next.js optimisĂ©e
+âââ tailwind.config.js            â Config Tailwind + mode nuit
+âââ README.md                     â Documentation complĂšte
 ```
 
-## Commandes Utiles
+## đš Personnalisation
 
-```bash
-# Développement
-npm run dev          # Serveur dev (port 3000)
-
-# Production
-npm run build        # Build optimisé
-npm start            # Serveur production
-
-# Qualité
-npm run lint         # Vérifier le code
-npx tsc --noEmit     # Vérifier types TS
-
-# Scraping (optionnel)
-python3 scripts/scrape-photos.py
-```
-
-## Personnalisation Rapide
-
-### Modifier les Données
-
-Éditez `public/data/elus.json` :
-
-```json
-{
-  "id": "votre-elu",
-  "nom": "Nom",
-  "prenom": "Prénom",
-  "fonction": "Fonction",
-  "revenus": 90000,
-  "patrimoine": 1200000,
-  ...
-}
-```
-
-### Ajouter des Photos
-
-1. Placez les images dans `public/photos/`
-2. Nommez-les comme l'ID : `votre-elu.jpg`
-3. Référencez dans le JSON : `"photo": "/photos/votre-elu.jpg"`
-
-### Changer les Couleurs
-
-Éditez `tailwind.config.js` :
-
+### Changer les couleurs
+Ăditez `tailwind.config.js` :
 ```javascript
 colors: {
-  primary: {
-    500: '#votrecouleur',
-  }
+  primary: { 500: '#votre-couleur' },
 }
 ```
 
-## Déploiement Express
-
-### Vercel (1 clic)
-
-1. Push sur GitHub
-2. Aller sur [vercel.com](https://vercel.com)
-3. Cliquer "Import Project"
-4. Sélectionner votre repo
-5. Cliquer "Deploy" ✨
-
-Aucune config nécessaire !
-
-### Build Local
-
-```bash
-npm run build
-npm start
+### Ajouter des Ă©lus
+Ăditez `public/data/elus.json` :
+```json
+{
+  "id": "nouvel-elu",
+  "nom": "Nom",
+  "prenom": "PrĂ©nom",
+  "fonction": "DĂ©putĂ©",
+  "revenus": 90000,
+  "patrimoine": 1200000,
+  "immobilier": 800000,
+  "placements": 300000,
+  "mandats": ["DĂ©putĂ©"],
+  "liens": { "hatvp": "https://..." }
+}
 ```
 
-Le site sera disponible sur http://localhost:3000
+### Activer les donnĂ©es HATVP complĂštes
+ExĂ©cutez le script Python :
+```bash
+cd scripts
+python generate-elus.py --limit 50    # Test sur 50 Ă©lus
+python generate-elus.py                 # Tous les Ă©lus
+```
 
-## Dépannage Rapide
+## đą DĂ©ploiement sur Vercel
 
-### Erreur de Build
+### MĂ©thode 1 : Via GitHub (recommandĂ©)
+1. Push sur GitHub
+2. Se connecter sur [vercel.com](https://vercel.com)
+3. Cliquer "Import Project"
+4. SĂ©lectionner votre repo
+5. Cliquer "Deploy"
 
+âš **DĂ©ploiement automatique** â Aucune configuration nĂ©cessaire !
+
+### MĂ©thode 2 : CLI Vercel
+```bash
+npm install -g vercel
+vercel login
+vercel
+```
+
+## đ§ Scripts disponibles
+
+```bash
+npm run dev        # Serveur dĂ©veloppement (port 3000)
+npm run build      # Build production
+npm start          # Serveur production
+npm run lint       # VĂ©rification code
+```
+
+## đĄ Astuces
+
+### Mode nuit
+- Automatique selon prĂ©fĂ©rences systĂšme
+- MĂ©morisĂ© dans localStorage
+- Bouton dans le header
+
+### Chargement progressif
+- Au dĂ©part : 20 Ă©lus + texte d'explication
+- Clic sur "AccĂ©der aux donnĂ©es" â Charge tous les Ă©lus
+- Recherche et tri fonctionnent sur tous les Ă©lus chargĂ©s
+
+### Optimisation mobile
+- Grille responsive : 1 col mobile, 4 cols desktop
+- Touch-friendly : zones cliquables larges
+- Navigation simplifiĂ©e
+
+## â ïž DĂ©pannage
+
+### Erreur de build
 ```bash
 rm -rf .next node_modules
 npm install
 npm run build
 ```
 
-### Port 3000 Occupé
-
+### Port 3000 occupĂ©
 ```bash
-# Changer le port
 PORT=3001 npm run dev
 ```
 
 ### Types TypeScript
-
 ```bash
-# Vérifier les erreurs
-npx tsc --noEmit
+npx tsc --noEmit     # VĂ©rifier les erreurs
 ```
 
-## Prochaines Étapes
+## đ Format des donnĂ©es
 
-1. ✅ Explorer la galerie d'élus
-2. ✅ Tester la recherche et les filtres
-3. ✅ Consulter un profil détaillé
-4. ✅ Personnaliser les données
-5. ✅ Déployer sur Vercel
+### Structure minimale
+```json
+{
+  "id": "identifiant-unique",
+  "nom": "Nom",
+  "prenom": "PrĂ©nom",
+  "fonction": "Fonction",
+  "revenus": 85000,
+  "patrimoine": 1000000,
+  "immobilier": 700000,
+  "placements": 250000,
+  "mandats": [],
+  "liens": {}
+}
+```
 
-## Besoin d'Aide ?
+### Avec donnĂ©es HATVP
+```json
+{
+  "hatvp_finances": {
+    "nb_instruments_financiers": 15,
+    "nb_participations_societes": 3,
+    "valeur_totale_instruments_euro": 200000,
+    "valeur_totale_participations_euro": 50000,
+    "types_instruments": {
+      "ACTIONS": 10,
+      "OBLIGATIONS": 3,
+      "ASSURANCE_VIE": 2
+    },
+    "nb_declarations_hatvp": 2
+  }
+}
+```
 
-- 📖 Documentation complète : [README.md](./README.md)
-- 🐛 Signaler un bug : [Issues](https://github.com/votre-username/transparence-nationale/issues)
-- 💬 Contribuer : [CONTRIBUTING.md](./CONTRIBUTING.md)
+## đŻ Objectifs du projet
+
+1. **Transparence** â DonnĂ©es publiques accessibles Ă  tous
+2. **Rigueur** â Sources officielles, pas d'interprĂ©tation
+3. **Performance** â Site rapide et lĂ©ger
+4. **AccessibilitĂ©** â Compatible tous devices
+
+## đ€ Support
+
+- **Documentation** : Voir README.md complet
+- **Issues** : GitHub issues
+- **Email** : (votre contact)
 
 ---
 
-**Bon développement ! 🚀**
+**Transparence Nationale v2.0** â *Investigation âą DonnĂ©es HATVP âą Open Source*
