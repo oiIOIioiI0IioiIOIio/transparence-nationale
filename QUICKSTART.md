@@ -1,22 +1,22 @@
-# đ Guide de DĂ©marrage Rapide - Transparence Nationale v2.0
+# 🚀 Guide de Démarrage Rapide - Transparence Nationale v2.0
 
-## đ„ Installation (5 minutes)
+## 📥 Installation (5 minutes)
 
-### 1. PrĂ©requis
-VĂ©rifiez que vous avez :
+### 1. Prérequis
+Vérifiez que vous avez :
 ```bash
 node --version   # >= 18.0.0
 npm --version    # >= 9.0.0
 ```
 
-Si non installĂ© : [TĂ©lĂ©charger Node.js](https://nodejs.org/)
+Si non installé : [Télécharger Node.js](https://nodejs.org/)
 
 ### 2. Installation
 ```bash
 # Extraire l'archive ou cloner le repo
 cd transparence-nationale-v2
 
-# Installer les dĂ©pendances
+# Installer les dépendances
 npm install
 ```
 
@@ -25,134 +25,134 @@ npm install
 npm run dev
 ```
 
-đ **C'est prĂȘt !** Ouvrez http://localhost:3000
+🎉 **C'est prêt !** Ouvrez http://localhost:3000
 
-## âš NouveautĂ©s v2.0
+## ✨ Nouveautés v2.0
 
 ### Interface
-- â **Mode nuit** â Bouton dans le header (persiste aprĂšs rechargement)
-- â **Chargement progressif** â 20 Ă©lus au dĂ©part, puis bouton "AccĂ©der aux donnĂ©es complĂštes"
-- â **Sans photos** â Focus sur les donnĂ©es, site ultra-lĂ©ger
-- â **Mobile-first** â OptimisĂ© pour smartphone et desktop
+- ✅ **Mode nuit** — Bouton dans le header (persiste après rechargement)
+- ✅ **Chargement progressif** — 20 élus au départ, puis bouton "Accéder aux données complètes"
+- ✅ **Sans photos** — Focus sur les données, site ultra-léger
+- ✅ **Mobile-first** — Optimisé pour smartphone et desktop
 
-### DonnĂ©es enrichies
-- â **Champs HATVP dĂ©taillĂ©s** â Instruments financiers, participations
-- â **7 modes de tri** â Nom, patrimoine, revenus, immobilier, placements, instruments, participations
-- â **Recherche avancĂ©e** â Par nom, fonction, rĂ©gion, mandats
+### Données enrichies
+- ✅ **Champs HATVP détaillés** — Instruments financiers, participations
+- ✅ **7 modes de tri** — Nom, patrimoine, revenus, immobilier, placements, instruments, participations
+- ✅ **Recherche avancée** — Par nom, fonction, région, mandats
 
 ### Performance
-- â **Animations optimisĂ©es** â Framer Motion avec delays progressifs
-- â **Bundle lĂ©ger** â Pas de dĂ©pendances inutiles
-- â **SEO optimisĂ©** â Metadata, structure sĂ©mantique
+- ✅ **Animations optimisées** — Framer Motion avec delays progressifs
+- ✅ **Bundle léger** — Pas de dépendances inutiles
+- ✅ **SEO optimisé** — Metadata, structure sémantique
 
-## đ Structure des fichiers
+## 📂 Structure des fichiers
 
 ```
 transparence-nationale-v2/
-âââ src/
-â   âââ app/
-â   â   âââ page.tsx              â Page d'accueil avec explication
-â   â   âââ layout.tsx            â Layout avec Header et Footer
-â   â   âââ globals.css           â Styles + mode nuit
-â   â   âââ profils/[id]/
-â   â       âââ page.tsx          â Page profil dĂ©taillĂ©e
-â   âââ components/
-â   â   âââ Header.tsx            â Header avec bouton mode nuit
-â   â   âââ PersonCard.tsx        â Carte Ă©lu (sans photo)
-â   â   âââ SearchBar.tsx         â Recherche + tri avancĂ©
-â   âââ hooks/
-â   â   âââ useElus.ts            â Store Zustand avec Ă©tat global
-â   âââ lib/
-â       âââ types.ts              â Types TypeScript complets
-âââ public/
-â   âââ data/
-â       âââ elus.json             â Base de donnĂ©es (exemple fourni)
-âââ package.json                  â DĂ©pendances
-âââ next.config.js                â Config Next.js optimisĂ©e
-âââ tailwind.config.js            â Config Tailwind + mode nuit
-âââ README.md                     â Documentation complĂšte
+├── src/
+│   ├── app/
+│   │   ├── page.tsx              ← Page d'accueil avec explication
+│   │   ├── layout.tsx            ← Layout avec Header et Footer
+│   │   ├── globals.css           ← Styles + mode nuit
+│   │   └── profils/[id]/
+│   │       └── page.tsx          ← Page profil détaillée
+│   ├── components/
+│   │   ├── Header.tsx            ← Header avec bouton mode nuit
+│   │   ├── PersonCard.tsx        ← Carte élu (sans photo)
+│   │   └── SearchBar.tsx         ← Recherche + tri avancé
+│   ├── hooks/
+│   │   └── useElus.ts            ← Store Zustand avec état global
+│   └── lib/
+│       └── types.ts              ← Types TypeScript complets
+├── public/
+│   └── data/
+│       └── elus.json             ← Base de données (exemple fourni)
+├── package.json                  ← Dépendances
+├── next.config.js                ← Config Next.js optimisée
+├── tailwind.config.js            ← Config Tailwind + mode nuit
+└── README.md                     ← Documentation complète
 ```
 
-## đš Personnalisation
+## 🎨 Personnalisation
 
 ### Changer les couleurs
-Ăditez `tailwind.config.js` :
+Éditez `tailwind.config.js` :
 ```javascript
 colors: {
   primary: { 500: '#votre-couleur' },
 }
 ```
 
-### Ajouter des Ă©lus
-Ăditez `public/data/elus.json` :
+### Ajouter des élus
+Éditez `public/data/elus.json` :
 ```json
 {
   "id": "nouvel-elu",
   "nom": "Nom",
-  "prenom": "PrĂ©nom",
-  "fonction": "DĂ©putĂ©",
+  "prenom": "Prénom",
+  "fonction": "Député",
   "revenus": 90000,
   "patrimoine": 1200000,
   "immobilier": 800000,
   "placements": 300000,
-  "mandats": ["DĂ©putĂ©"],
+  "mandats": ["Député"],
   "liens": { "hatvp": "https://..." }
 }
 ```
 
-### Activer les donnĂ©es HATVP complĂštes
-ExĂ©cutez le script Python :
+### Activer les données HATVP complètes
+Exécutez le script Python :
 ```bash
 cd scripts
-python generate-elus.py --limit 50    # Test sur 50 Ă©lus
-python generate-elus.py                 # Tous les Ă©lus
+python generate-elus.py --limit 50    # Test sur 50 élus
+python generate-elus.py                 # Tous les élus
 ```
 
-## đą DĂ©ploiement sur Vercel
+## 🚢 Déploiement sur Vercel
 
-### MĂ©thode 1 : Via GitHub (recommandĂ©)
+### Méthode 1 : Via GitHub (recommandé)
 1. Push sur GitHub
 2. Se connecter sur [vercel.com](https://vercel.com)
 3. Cliquer "Import Project"
-4. SĂ©lectionner votre repo
+4. Sélectionner votre repo
 5. Cliquer "Deploy"
 
-âš **DĂ©ploiement automatique** â Aucune configuration nĂ©cessaire !
+✨ **Déploiement automatique** — Aucune configuration nécessaire !
 
-### MĂ©thode 2 : CLI Vercel
+### Méthode 2 : CLI Vercel
 ```bash
 npm install -g vercel
 vercel login
 vercel
 ```
 
-## đ§ Scripts disponibles
+## 🔧 Scripts disponibles
 
 ```bash
-npm run dev        # Serveur dĂ©veloppement (port 3000)
+npm run dev        # Serveur développement (port 3000)
 npm run build      # Build production
 npm start          # Serveur production
-npm run lint       # VĂ©rification code
+npm run lint       # Vérification code
 ```
 
-## đĄ Astuces
+## 💡 Astuces
 
 ### Mode nuit
-- Automatique selon prĂ©fĂ©rences systĂšme
-- MĂ©morisĂ© dans localStorage
+- Automatique selon préférences système
+- Mémorisé dans localStorage
 - Bouton dans le header
 
 ### Chargement progressif
-- Au dĂ©part : 20 Ă©lus + texte d'explication
-- Clic sur "AccĂ©der aux donnĂ©es" â Charge tous les Ă©lus
-- Recherche et tri fonctionnent sur tous les Ă©lus chargĂ©s
+- Au départ : 20 élus + texte d'explication
+- Clic sur "Accéder aux données" → Charge tous les élus
+- Recherche et tri fonctionnent sur tous les élus chargés
 
 ### Optimisation mobile
 - Grille responsive : 1 col mobile, 4 cols desktop
 - Touch-friendly : zones cliquables larges
-- Navigation simplifiĂ©e
+- Navigation simplifiée
 
-## â ïž DĂ©pannage
+## ⚠️ Dépannage
 
 ### Erreur de build
 ```bash
@@ -161,24 +161,24 @@ npm install
 npm run build
 ```
 
-### Port 3000 occupĂ©
+### Port 3000 occupé
 ```bash
 PORT=3001 npm run dev
 ```
 
 ### Types TypeScript
 ```bash
-npx tsc --noEmit     # VĂ©rifier les erreurs
+npx tsc --noEmit     # Vérifier les erreurs
 ```
 
-## đ Format des donnĂ©es
+## 📝 Format des données
 
 ### Structure minimale
 ```json
 {
   "id": "identifiant-unique",
   "nom": "Nom",
-  "prenom": "PrĂ©nom",
+  "prenom": "Prénom",
   "fonction": "Fonction",
   "revenus": 85000,
   "patrimoine": 1000000,
@@ -189,7 +189,7 @@ npx tsc --noEmit     # VĂ©rifier les erreurs
 }
 ```
 
-### Avec donnĂ©es HATVP
+### Avec données HATVP
 ```json
 {
   "hatvp_finances": {
@@ -207,14 +207,14 @@ npx tsc --noEmit     # VĂ©rifier les erreurs
 }
 ```
 
-## đŻ Objectifs du projet
+## 🎯 Objectifs du projet
 
-1. **Transparence** â DonnĂ©es publiques accessibles Ă  tous
-2. **Rigueur** â Sources officielles, pas d'interprĂ©tation
-3. **Performance** â Site rapide et lĂ©ger
-4. **AccessibilitĂ©** â Compatible tous devices
+1. **Transparence** — Données publiques accessibles à tous
+2. **Rigueur** — Sources officielles, pas d'interprétation
+3. **Performance** — Site rapide et léger
+4. **Accessibilité** — Compatible tous devices
 
-## đ€ Support
+## 🤝 Support
 
 - **Documentation** : Voir README.md complet
 - **Issues** : GitHub issues
@@ -222,4 +222,4 @@ npx tsc --noEmit     # VĂ©rifier les erreurs
 
 ---
 
-**Transparence Nationale v2.0** â *Investigation âą DonnĂ©es HATVP âą Open Source*
+**Transparence Nationale v2.0** — *Investigation • Données HATVP • Open Source*
