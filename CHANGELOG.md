@@ -1,60 +1,130 @@
-# Changelog
+# Changelog - Transparence Nationale
 
-Toutes les modifications notables de ce projet seront documentées dans ce fichier.
+## Version 2.0.0 - Refonte complète (Février 2025)
 
-Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
-et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
+### 🎨 Interface
+- ✅ **Suppression des photos** — Focus sur les données, pas l'apparence
+- ✅ **Mode nuit complet** — Dark mode avec persistance localStorage
+- ✅ **Chargement progressif** — 20 élus en preview, puis chargement complet sur clic
+- ✅ **Design épuré** — Interface minimaliste et professionnelle
+- ✅ **Mobile-first** — Optimisation smartphone prioritaire
+- ✅ **Animations subtiles** — Framer Motion avec delays progressifs
 
-## [1.0.0] - 2024-02-24
+### 📊 Données
+- ✅ **Champs HATVP enrichis** — Support complet des données HATVP
+  - Instruments financiers (actions, obligations, assurance-vie...)
+  - Participations dans des sociétés
+  - Types d'instruments détaillés
+  - Valeurs totales
+- ✅ **Page d'explication** — Contexte journalistique au premier chargement
+- ✅ **Détails patrimoine** — Composition visuelle (immobilier, placements, autres)
 
-### Ajouté ✨
-- Galerie interactive d'élus français avec grid responsive
-- Système de recherche en temps réel (nom, fonction, région)
-- Tri dynamique par nom, patrimoine ou revenus
-- Page de profil détaillé pour chaque élu
-- Graphique circulaire de composition du patrimoine (Recharts)
-- Animations fluides avec Framer Motion
-- Design moderne avec Tailwind CSS
-- Optimisation d'images avec Next.js Image
-- Hook Zustand pour la gestion d'état
-- Script Python de scraping photos
-- Données d'exemple (20 élus français)
-- Documentation complète (README, QUICKSTART, CONTRIBUTING)
-- Configuration GitHub Actions (CI)
-- Support TypeScript strict
-- Déploiement Vercel prêt
+### 🔍 Recherche et tri
+- ✅ **7 modes de tri** (vs 3 avant) :
+  - Nom (A-Z)
+  - Patrimoine (décroissant)
+  - Revenus (décroissant)
+  - Immobilier (décroissant) 🆕
+  - Placements (décroissant) 🆕
+  - Instruments financiers (décroissant) 🆕
+  - Participations (décroissant) 🆕
+- ✅ **Recherche étendue** — Nom, fonction, région, mandats
+- ✅ **Interface tri améliorée** — Panel déroulant avec boutons clairs
 
-### Technologies 🔧
-- Next.js 14 (App Router)
-- React 18
-- TypeScript 5
-- Tailwind CSS 3.3
-- Framer Motion
-- Recharts
-- Zustand
-- Lucide React
+### ⚡ Performance
+- ✅ **Bundle optimisé** — Suppression des imports inutiles
+- ✅ **Images supprimées** — Site ultra-léger
+- ✅ **Lazy loading** — Chargement progressif des données
+- ✅ **Cache localStorage** — Mode nuit mémorisé
+- ✅ **CSS optimisé** — Transitions ciblées uniquement
 
-### Documentation 📚
-- README.md complet
-- Guide de démarrage rapide (QUICKSTART.md)
-- Guide de contribution (CONTRIBUTING.md)
-- Licence MIT
+### 🏗️ Architecture
+- ✅ **TypeScript strict** — Types complets pour toutes les données
+- ✅ **Zustand amélioré** — State management avec preview/full mode
+- ✅ **Components refactorisés** — Code plus maintenable
+- ✅ **Config optimisée** — Next.js, Tailwind, TypeScript
 
-### Configuration ⚙️
-- ESLint configuré
-- TypeScript strict mode
-- Tailwind avec config personnalisée
-- Workflow CI GitHub Actions
-- Config Vercel optimisée
+### 📱 Mobile
+- ✅ **Touch-friendly** — Zones tactiles larges
+- ✅ **Navigation simplifiée** — Menu burger si nécessaire
+- ✅ **Grille responsive** — 1-2-3-4 colonnes selon écran
+- ✅ **Performance mobile** — Temps de chargement < 2s
+
+## Version 1.0.0 - Version initiale (2024)
+
+### Fonctionnalités
+- ✅ Galerie d'élus avec photos
+- ✅ Recherche par nom, fonction, région
+- ✅ Tri par nom, patrimoine, revenus
+- ✅ Pages de profil détaillées
+- ✅ Graphiques patrimoine (PortfolioChart)
+- ✅ Liens HATVP, Assemblée, Wikipedia
+- ✅ Design classique avec Tailwind CSS
+- ✅ Animation Framer Motion
+
+### Limitations v1
+- ❌ Pas de mode nuit
+- ❌ Photos lourdes (impact performance)
+- ❌ Chargement complet au démarrage
+- ❌ Tri limité à 3 critères
+- ❌ Pas de données HATVP détaillées
+- ❌ Interface générique
 
 ---
 
-## Format
+## Migration v1 → v2
 
-Les types de changements sont :
-- `Ajouté` pour les nouvelles fonctionnalités
-- `Modifié` pour les changements dans les fonctionnalités existantes
-- `Déprécié` pour les fonctionnalités bientôt supprimées
-- `Retiré` pour les fonctionnalités supprimées
-- `Corrigé` pour les corrections de bugs
-- `Sécurité` pour les vulnérabilités corrigées
+### Fichiers modifiés
+- `src/lib/types.ts` — Types étendus avec HatvpFinances
+- `src/hooks/useElus.ts` — Ajout darkMode, showAll, preview
+- `src/components/PersonCard.tsx` — Suppression photo, ajout données HATVP
+- `src/components/SearchBar.tsx` — Tri avancé avec 7 options
+- `src/app/page.tsx` — Texte explicatif + chargement progressif
+- `src/app/layout.tsx` — Header avec mode nuit
+- `src/app/globals.css` — Support dark mode complet
+
+### Fichiers ajoutés
+- `src/components/Header.tsx` — Header standalone avec toggle dark
+- `QUICKSTART.md` — Guide de démarrage
+- `CHANGELOG.md` — Ce fichier
+
+### Fichiers supprimés
+- `src/components/PortfolioChart.tsx` — Remplacé par barre de progression simple
+- `public/photos/` — Photos supprimées
+
+### Données
+Le format JSON reste compatible. Les nouveaux champs sont optionnels :
+```json
+{
+  "hatvp_finances": {
+    "nb_instruments_financiers": 15,
+    "nb_participations_societes": 3,
+    ...
+  }
+}
+```
+
+---
+
+## Roadmap v2.1 (à venir)
+
+### Fonctionnalités prévues
+- [ ] Export CSV/PDF des données
+- [ ] Comparateur entre 2 élus
+- [ ] Statistiques globales (moyennes, médianes)
+- [ ] Graphiques avancés (évolution temporelle)
+- [ ] Filtres par fourchettes de valeurs
+- [ ] Recherche par ville/département
+- [ ] API REST publique
+- [ ] Mode impression optimisé
+
+### Optimisations
+- [ ] PWA (Progressive Web App)
+- [ ] Service Worker pour cache offline
+- [ ] Compression Brotli
+- [ ] CDN pour assets statiques
+- [ ] Lazy loading images (si réintroduites)
+
+---
+
+**Transparence Nationale** — Open Source • Investigation • Données Publiques
