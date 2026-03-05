@@ -24,6 +24,8 @@ export const useElus = create<ElusStore>((set, get) => ({
           elu.prenom.toLowerCase().includes(term) ||
           elu.fonction.toLowerCase().includes(term) ||
           (elu.region && elu.region.toLowerCase().includes(term)) ||
+          (elu.groupe && elu.groupe.toLowerCase().includes(term)) ||
+          (elu.parti && elu.parti.toLowerCase().includes(term)) ||
           elu.mandats.some((m) => m.toLowerCase().includes(term)) ||
           (elu.types_mandat && elu.types_mandat.some((t) => t.toLowerCase().includes(term)))
       );

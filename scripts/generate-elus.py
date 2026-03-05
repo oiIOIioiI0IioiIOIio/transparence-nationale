@@ -54,8 +54,13 @@ XML_CACHE    = os.path.join(CACHE_DIR, "declarations.xml")
 # ── URLs HATVP open data ───────────────────────────────────────────────────────
 HATVP_INDEX_URL = "https://www.hatvp.fr/livraison/opendata/liste.csv"
 
-# Le XML unique contenant TOUTES les déclarations
-HATVP_DECLARATIONS_XML_URL = "https://www.hatvp.fr/livraison/opendata/declarations.xml"
+# Le XML unique contenant TOUTES les déclarations — plusieurs URLs possibles
+# URL principale (merge) : contient l'intégralité des déclarations
+HATVP_DECLARATIONS_XML_URLS = [
+    "https://www.hatvp.fr/livraison/merge/declarations.xml",
+    "https://www.data.gouv.fr/api/1/datasets/r/247995fb-3b98-48fd-95a4-2607c8a1de74",
+    "https://www.hatvp.fr/livraison/opendata/declarations.xml",
+]
 
 # XMLs individuels via la colonne open_data du CSV
 HATVP_OPENDATA_BASE = "https://www.hatvp.fr/livraison/opendata/"
@@ -323,15 +328,38 @@ def load_hatvp_index(force_refresh: bool = False, delay: float = 0.3) -> list[di
 def load_declarations_xml(force_refresh: bool = False, delay: float = 0.3) -> ET.Element | None:
     """
     Télécharger et parser le XML unique contenant TOUTES les déclarations HATVP.
+    Essaie plusieurs URLs dans l'ordre (merge, data.gouv.fr, opendata).
     Retourne l'élément racine.
     """
     os.makedirs(CACHE_DIR, exist_ok=True)
-    raw = download_file(
-        HATVP_DECLARATIONS_XML_URL, XML_CACHE,
-        force=force_refresh, max_age_h=48, delay=delay
-    )
+
+    # Essayer le cache d'abord
+    raw = None
+    if not force_refresh and os.path.exists(XML_CACHE):
+        age_h = (time.time() - os.path.getmtime(XML_CACHE)) / 3600
+        if age_h < 48:
+            print(f"  ✓ En cache ({age_h:.1f} h) : {os.path.basename(XML_CACHE)}")
+            with open(XML_CACHE, "rb") as f:
+                raw = f.read()
+
+    # Si pas en cache, essayer les URLs dans l'ordre
     if not raw:
-        print("  ⚠ Impossible de télécharger le XML complet")
+        for url in HATVP_DECLARATIONS_XML_URLS:
+            print(f"  🔄 Tentative : {url}")
+            time.sleep(delay)
+            data = http_get(url, timeout=300)
+            if data and len(data) > 1000:
+                raw = data
+                # Sauvegarder en cache
+                with open(XML_CACHE, "wb") as f:
+                    f.write(raw)
+                print(f"  ✓ Téléchargé ({len(raw):,} octets) depuis {url}")
+                break
+            else:
+                print(f"  ✗ Échec ou réponse trop courte depuis {url}")
+
+    if not raw:
+        print("  ⚠ Impossible de télécharger le XML complet depuis aucune URL")
         return None
 
     print(f"  📖 Parsing du XML ({len(raw):,} octets)…")
@@ -428,70 +456,138 @@ def get_individual_xml_url(csv_row: dict) -> str | None:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Sections connues du XML HATVP et leur catégorie
+# Basé sur opendata-structure.xlsx (feuilles PATRIMOINE et INTERETS)
 KNOWN_SECTIONS = {
-    # DSP — Patrimoine
-    "instrumentsFinanciersDto":     "instruments_financiers",
-    "participationFinanciereDto":   "participations_financieres",
+    # ── DSP — Patrimoine (feuille PATRIMOINE du xlsx) ─────────────────────────
+    # Biens immobiliers
+    "immeubleDto":                  "biens_immobiliers",
     "biensImmobiliersDto":          "biens_immobiliers",
     "bienImmobilierDto":            "biens_immobiliers",
+    # Parts de SCI
+    "sciDto":                       "parts_sci",
+    # Comptes bancaires
+    "comptesBancaireDto":           "comptes_bancaires",
     "comptesBancairesDto":          "comptes_bancaires",
     "compteBancaireDto":            "comptes_bancaires",
     "liquiditesDto":                "comptes_bancaires",
-    "vehiculesDto":                 "vehicules",
+    # Assurances vie
+    "assuranceVieDto":              "assurances_vie",
+    # Valeurs mobilières en bourse
+    "valeursEnBourseDto":           "valeurs_bourse",
+    # Valeurs non cotées en bourse
+    "valeursNonEnBourseDto":        "valeurs_non_bourse",
+    # Instruments financiers (ancien format)
+    "instrumentsFinanciersDto":     "instruments_financiers",
+    # Participations financières
+    "participationFinanciereDto":   "participations_financieres",
+    "participationFinancieresDto":  "participations_financieres",
+    # Fonds
+    "fondDto":                      "fonds",
+    # Biens divers
+    "bienDiverDto":                 "biens_divers",
+    # Autres biens
+    "autreBienDto":                 "autres_biens",
+    "autresBiensDto":               "autres_biens",
+    # Biens à l'étranger
+    "bienEtrangerDto":              "biens_etrangers",
+    # Véhicules
     "vehiculeDto":                  "vehicules",
-    "autresBiensDto":               "biens_mobiliers_valeur",
-    "biensMobiliersDto":            "biens_mobiliers_valeur",
-    "biensValeurDto":               "biens_mobiliers_valeur",
+    "vehiculesDto":                 "vehicules",
+    # Passif (dettes/emprunts)
+    "passifDto":                    "dettes",
     "dettesDto":                    "dettes",
     "detteDto":                     "dettes",
     "empruntsDto":                  "dettes",
+    # Revenus / mandats
+    "revenuMandatDto":              "revenus",
     "revenusDto":                   "revenus",
     "revenuDto":                    "revenus",
     "revenusActiviteDto":           "revenus",
-    # DI — Intérêts
+    # Événements majeurs
+    "evenementMajeurDto":           "evenements_majeurs",
+    # Observations patrimoine
+    "observationPatrimoineDto":     "observations_patrimoine",
+    # Biens mobiliers de valeur
+    "biensMobiliersDto":            "biens_mobiliers_valeur",
+    "biensValeurDto":               "biens_mobiliers_valeur",
+    # ── DI — Intérêts (feuille INTERETS du xlsx) ─────────────────────────────
+    # Activités de consultant
+    "activConsultantDto":           "activites_consultant",
+    # Activités professionnelles (5 dernières années)
+    "activProfCinqDerniereDto":     "activites_professionnelles",
     "activitesProfessionnellesDto": "activites_professionnelles",
     "activiteProfessionnelleDto":   "activites_professionnelles",
     "fonctionsActuellesDto":        "activites_professionnelles",
-    "activitesAnterieuresDto":      "activites_anterieures",
-    "activiteAnterieureDto":        "activites_anterieures",
-    "fonctionsAnterieuresDto":      "activites_anterieures",
-    "mandatsElectifsDto":           "mandats_electifs",
+    # Mandats électifs
     "mandatElectifDto":             "mandats_electifs",
+    "mandatsElectifsDto":           "mandats_electifs",
     "mandatsDto":                   "mandats_electifs",
+    # Participations en tant que dirigeant
+    "participationDirigeantDto":    "participations_organes",
     "participationsOrganeDto":      "participations_organes",
     "participationOrganeDto":       "participations_organes",
     "organesDirigeantsDto":         "participations_organes",
+    # Fonctions bénévoles
+    "fonctionBenevoleDto":          "fonctions_benevoles",
     "fonctionsBenevolesDto":        "fonctions_benevoles",
     "soutiensAssociationsDto":      "fonctions_benevoles",
     "soutienAssociationDto":        "fonctions_benevoles",
     "activitesBenevolesDto":        "fonctions_benevoles",
+    # Activités professionnelles du conjoint
+    "activProfConjointDto":         "activites_conjoint",
+    # Activités des collaborateurs
+    "activCollaborateursDto":       "activites_collaborateurs",
+    # Observations intérêts
+    "observationInteretDto":        "observations_interets",
+    # Activités antérieures
+    "activitesAnterieuresDto":      "activites_anterieures",
+    "activiteAnterieureDto":        "activites_anterieures",
+    "fonctionsAnterieuresDto":      "activites_anterieures",
+    # Autres liens d'intérêts
     "autresLiensInteretsDto":       "autres_liens_interets",
     "autreLienInteretDto":          "autres_liens_interets",
     "liensInteretsDto":             "autres_liens_interets",
+    # Autres activités
     "autresActivitesDto":           "autres_activites",
     "autreActiviteDto":             "autres_activites",
-    # Sections additionnelles courantes
+    # Fonctions gouvernementales
     "fonctionsGouvernementalesDto":  "fonctions_gouvernementales",
+    # Fonctions consultatives
     "consultatifEtAutresDto":        "fonctions_consultatives",
+    # Participations exploitant
     "participationExploitantDto":    "participations_exploitant",
 }
 
 ALL_OUTPUT_SECTIONS = sorted(set(KNOWN_SECTIONS.values()))
 
 SECTION_LABELS = {
+    "biens_immobiliers":            "🏠 Biens immobiliers",
+    "parts_sci":                    "🏗️  Parts de SCI",
+    "comptes_bancaires":            "🏦 Comptes bancaires & épargne",
+    "assurances_vie":               "🛡️  Assurances vie",
+    "valeurs_bourse":               "📈 Valeurs mobilières cotées",
+    "valeurs_non_bourse":           "📊 Valeurs non cotées",
     "instruments_financiers":       "📈 Instruments financiers",
     "participations_financieres":   "🏢 Participations dans des sociétés",
-    "biens_immobiliers":            "🏠 Biens immobiliers",
-    "comptes_bancaires":            "🏦 Comptes bancaires & épargne",
+    "fonds":                        "💰 Fonds",
+    "biens_divers":                 "🎨 Biens divers",
+    "autres_biens":                 "📦 Autres biens",
+    "biens_etrangers":              "🌍 Biens à l'étranger",
     "vehicules":                    "🚗 Véhicules",
     "biens_mobiliers_valeur":       "💎 Biens mobiliers de valeur",
     "dettes":                       "📉 Dettes & emprunts",
     "revenus":                      "💶 Revenus",
+    "evenements_majeurs":           "⚡ Événements majeurs",
+    "observations_patrimoine":      "📝 Observations patrimoine",
+    "activites_consultant":         "🔍 Activités de consultant",
     "activites_professionnelles":   "💼 Activités professionnelles",
     "activites_anterieures":        "📋 Activités antérieures",
     "mandats_electifs":             "🗳️  Mandats électifs",
     "participations_organes":       "🏛️  Participations à des organes",
     "fonctions_benevoles":          "🤝 Fonctions bénévoles",
+    "activites_conjoint":           "👥 Activités du conjoint",
+    "activites_collaborateurs":     "👤 Activités des collaborateurs",
+    "observations_interets":        "📝 Observations intérêts",
     "autres_liens_interets":        "⚠️  Autres liens d'intérêts",
     "autres_activites":             "📝 Autres activités",
     "fonctions_gouvernementales":   "🏛️  Fonctions gouvernementales",
@@ -705,6 +801,17 @@ def fetch_data_for_elu(
     return result
 
 
+# Noms des champs financiers à chercher dans les items XML pour calculer les totaux
+FINANCIAL_FIELD_NAMES = (
+    "valeur_euro", "solde_euro", "montant_euro",
+    "valeur", "solde", "montant", "valeurParts",
+    "capitalRestantDu", "remuneration_euro", "indemnite_euro",
+    "valeurVenale", "prixAcquisition", "valeurDeclaree",
+    "valeurEstimee", "montantAnnuel", "montantTotal",
+    "montantBrut", "montantNet",
+)
+
+
 def build_resume_hatvp(data: dict) -> dict:
     """Construire un résumé compact pour elus.json."""
 
@@ -712,9 +819,7 @@ def build_resume_hatvp(data: dict) -> dict:
         n = len(items)
         total = 0.0
         for i in items:
-            for k in ("valeur_euro", "solde_euro", "montant_euro",
-                       "valeur", "solde", "montant", "valeurParts",
-                       "capitalRestantDu", "remuneration_euro", "indemnite_euro"):
+            for k in FINANCIAL_FIELD_NAMES:
                 v = i.get(k)
                 if v is not None:
                     if isinstance(v, str):
@@ -749,10 +854,13 @@ def build_resume_hatvp(data: dict) -> dict:
             total_revenus += total
         elif section_name not in (
             "activites_professionnelles", "activites_anterieures",
+            "activites_consultant", "activites_conjoint",
+            "activites_collaborateurs",
             "mandats_electifs", "participations_organes",
             "fonctions_benevoles", "autres_liens_interets",
             "autres_activites", "fonctions_gouvernementales",
-            "fonctions_consultatives",
+            "fonctions_consultatives", "observations_patrimoine",
+            "observations_interets", "evenements_majeurs",
         ):
             patrimoine_brut += total
 
@@ -1128,6 +1236,10 @@ def main():
                         resume.get("valeur_instruments_financiers_euro", 0)
                         + resume.get("valeur_participations_financieres_euro", 0)
                         + resume.get("valeur_comptes_bancaires_euro", 0)
+                        + resume.get("valeur_valeurs_bourse_euro", 0)
+                        + resume.get("valeur_valeurs_non_bourse_euro", 0)
+                        + resume.get("valeur_assurances_vie_euro", 0)
+                        + resume.get("valeur_fonds_euro", 0)
                     )
         # Enrichir les métadonnées depuis le CSV
         enrich_elus_from_csv(all_elus, csv_index)
