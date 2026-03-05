@@ -4,7 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Elu } from '@/lib/types';
-import { User } from 'lucide-react';
+import { User, MapPin, Briefcase } from 'lucide-react';
 
 interface PersonCardProps {
   elu: Elu;
@@ -22,68 +22,80 @@ export default function PersonCard({ elu, index }: PersonCardProps) {
 
   const photoSrc = elu.photo_url || (elu.photo !== '/photos/placeholder.jpg' ? elu.photo : '');
   const hasFinancialData = (elu.patrimoine || 0) > 0 || (elu.revenus || 0) > 0;
+  const nbDeclarations = elu.hatvp?.nb_declarations_hatvp || elu.declarations_csv?.length || 0;
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay: index * 0.05 }}
+      transition={{ duration: 0.4, delay: index * 0.03 }}
     >
       <Link href={`/profils/${elu.id}`}>
         <motion.div
-          whileHover={{ y: -8, boxShadow: '0 20px 40px rgba(0, 0, 0, 0.15)' }}
+          whileHover={{ y: -4, boxShadow: '0 12px 24px rgba(0, 0, 0, 0.12)' }}
           transition={{ duration: 0.2 }}
-          className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-2xl cursor-pointer h-full"
+          className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl cursor-pointer h-full flex flex-row"
         >
-          {/* Photo */}
-          <div className="relative h-64 bg-gradient-to-br from-blue-100 to-green-100">
+          {/* Photo — côté gauche, affichée en entier */}
+          <div className="relative w-28 sm:w-32 min-h-[8rem] flex-shrink-0 bg-gradient-to-br from-blue-100 to-green-100">
             {photoSrc ? (
               <Image
                 src={photoSrc}
                 alt={`${elu.prenom} ${elu.nom}`}
                 fill
                 className="object-cover"
-                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                sizes="(max-width: 640px) 112px, 128px"
                 unoptimized={!!elu.photo_url}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
-                <User size={80} className="text-gray-300" />
+                <User size={48} className="text-gray-300" />
               </div>
             )}
           </div>
 
-          {/* Contenu */}
-          <div className="p-6">
-            <h3 className="text-xl font-bold text-gray-900 mb-1">
-              {elu.prenom} {elu.nom}
-            </h3>
-            <p className="text-sm text-blue-600 font-medium mb-3">
-              {elu.fonction}
-            </p>
-            {elu.region && (
-              <p className="text-sm text-gray-500 mb-4">{elu.region}</p>
-            )}
+          {/* Contenu — côté droit */}
+          <div className="flex-1 p-3 sm:p-4 flex flex-col justify-between min-w-0">
+            <div>
+              <h3 className="text-base sm:text-lg font-bold text-gray-900 truncate">
+                {elu.prenom} {elu.nom}
+              </h3>
+              <p className="text-xs sm:text-sm text-blue-600 font-medium truncate mt-0.5">
+                {elu.fonction}
+              </p>
+              {elu.region && (
+                <p className="text-xs text-gray-500 flex items-center gap-1 mt-1 truncate">
+                  <MapPin size={12} className="flex-shrink-0" />
+                  {elu.region}
+                </p>
+              )}
+              {elu.groupe && (
+                <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5 truncate">
+                  <Briefcase size={12} className="flex-shrink-0" />
+                  {elu.groupe}
+                </p>
+              )}
+            </div>
 
             {/* Badges */}
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-1.5 flex-wrap mt-2">
               {hasFinancialData ? (
                 <>
                   {(elu.patrimoine || 0) > 0 && (
-                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-blue-100 text-blue-800">
                       Patrimoine: {formatMoney(elu.patrimoine || 0)}
                     </span>
                   )}
                   {(elu.revenus || 0) > 0 && (
-                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-green-100 text-green-800">
                       Revenus: {formatMoney(elu.revenus || 0)}
                     </span>
                   )}
                 </>
               ) : (
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-600">
-                  {elu.hatvp?.nb_declarations_hatvp
-                    ? `${elu.hatvp.nb_declarations_hatvp} déclaration(s)`
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-gray-100 text-gray-600">
+                  {nbDeclarations > 0
+                    ? `${nbDeclarations} déclaration(s)`
                     : 'Données en cours'}
                 </span>
               )}

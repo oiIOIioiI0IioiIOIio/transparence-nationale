@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
-import { ArrowLeft, ExternalLink, User, Briefcase, MapPin, Calendar, FileText, Scale, Building2, Landmark } from 'lucide-react';
+import { ArrowLeft, ExternalLink, User, Briefcase, MapPin, Calendar, FileText, Scale, Building2, Landmark, Users, TrendingUp } from 'lucide-react';
 import { Elu } from '@/lib/types';
 import PortfolioChart from '@/components/PortfolioChart';
 
@@ -32,6 +32,40 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   DIM: "DI — Modification",
   DIA: "Déclaration d'Intérêts et d'Activités",
   DIAM: "DIA — Modification",
+};
+
+// Labels pour les sections HATVP détaillées
+const HATVP_SECTION_LABELS: Record<string, { label: string; icon: string }> = {
+  nb_biens_immobiliers:            { label: 'Biens immobiliers',            icon: '🏠' },
+  nb_parts_sci:                    { label: 'Parts de SCI',                 icon: '🏗️' },
+  nb_comptes_bancaires:            { label: 'Comptes bancaires',            icon: '🏦' },
+  nb_assurances_vie:               { label: 'Assurances vie',               icon: '🛡️' },
+  nb_valeurs_bourse:               { label: 'Valeurs cotées',               icon: '📈' },
+  nb_valeurs_non_bourse:           { label: 'Valeurs non cotées',           icon: '📊' },
+  nb_instruments_financiers:       { label: 'Instruments financiers',       icon: '📈' },
+  nb_participations_financieres:   { label: 'Participations financières',   icon: '🏢' },
+  nb_fonds:                        { label: 'Fonds',                        icon: '💰' },
+  nb_biens_divers:                 { label: 'Biens divers',                 icon: '🎨' },
+  nb_autres_biens:                 { label: 'Autres biens',                 icon: '📦' },
+  nb_biens_etrangers:              { label: 'Biens à l\'étranger',          icon: '🌍' },
+  nb_vehicules:                    { label: 'Véhicules',                    icon: '🚗' },
+  nb_biens_mobiliers_valeur:       { label: 'Biens mobiliers de valeur',    icon: '💎' },
+  nb_dettes:                       { label: 'Dettes & emprunts',            icon: '📉' },
+  nb_revenus:                      { label: 'Revenus',                      icon: '💶' },
+  nb_evenements_majeurs:           { label: 'Événements majeurs',           icon: '⚡' },
+  nb_activites_consultant:         { label: 'Activités de consultant',      icon: '🔍' },
+  nb_activites_professionnelles:   { label: 'Activités professionnelles',   icon: '💼' },
+  nb_activites_anterieures:        { label: 'Activités antérieures',        icon: '📋' },
+  nb_mandats_electifs:             { label: 'Mandats électifs',             icon: '🗳️' },
+  nb_participations_organes:       { label: 'Participations à des organes', icon: '🏛️' },
+  nb_fonctions_benevoles:          { label: 'Fonctions bénévoles',          icon: '🤝' },
+  nb_activites_conjoint:           { label: 'Activités du conjoint',        icon: '👥' },
+  nb_activites_collaborateurs:     { label: 'Activités collaborateurs',     icon: '👤' },
+  nb_autres_liens_interets:        { label: 'Autres liens d\'intérêts',     icon: '⚠️' },
+  nb_autres_activites:             { label: 'Autres activités',             icon: '📝' },
+  nb_fonctions_gouvernementales:   { label: 'Fonctions gouvernementales',   icon: '🏛️' },
+  nb_fonctions_consultatives:      { label: 'Fonctions consultatives',      icon: '📋' },
+  nb_participations_exploitant:    { label: 'Participations exploitant',    icon: '🏭' },
 };
 
 export default function ProfilPage() {
@@ -114,20 +148,33 @@ export default function ProfilPage() {
   const photoSrc = elu.photo_url || (elu.photo !== '/photos/placeholder.jpg' ? elu.photo : '');
   const nbDeclarations = elu.hatvp?.nb_declarations_hatvp || elu.declarations_csv?.length || 0;
 
+  // Collecter les sections HATVP détaillées qui ont des données
+  const hatvpSections = elu.hatvp
+    ? Object.entries(elu.hatvp)
+        .filter(([key, val]) => key.startsWith('nb_') && key !== 'nb_declarations_hatvp' && typeof val === 'number' && val > 0)
+        .map(([key, val]) => ({
+          key,
+          count: val as number,
+          label: HATVP_SECTION_LABELS[key]?.label || key.replace('nb_', '').replace(/_/g, ' '),
+          icon: HATVP_SECTION_LABELS[key]?.icon || '📄',
+          value: elu.hatvp?.[key.replace('nb_', 'valeur_') + '_euro'] as number | undefined,
+        }))
+    : [];
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-12">
       {/* Bouton retour */}
       <motion.button
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         onClick={() => router.push('/')}
-        className="flex items-center gap-2 text-gray-600 hover:text-blue-600 mb-8 transition-colors"
+        className="flex items-center gap-2 text-gray-600 hover:text-blue-600 mb-6 sm:mb-8 transition-colors"
       >
         <ArrowLeft size={20} />
         <span className="font-medium">Retour à la galerie</span>
       </motion.button>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
         {/* Colonne gauche - Photo et infos */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -135,55 +182,75 @@ export default function ProfilPage() {
           transition={{ duration: 0.4 }}
           className="lg:col-span-1"
         >
-          <div className="bg-white rounded-xl shadow-lg overflow-hidden sticky top-24">
-            {/* Photo */}
-            <div className="relative h-80 bg-gradient-to-br from-blue-100 to-green-100">
+          <div className="bg-white rounded-xl shadow-lg overflow-hidden sticky top-20 sm:top-24">
+            {/* Photo — affichée en entier */}
+            <div className="relative aspect-[3/4] max-h-80 sm:max-h-96 bg-gradient-to-br from-blue-100 to-green-100">
               {photoSrc ? (
                 <Image
                   src={photoSrc}
                   alt={`${elu.prenom} ${elu.nom}`}
                   fill
-                  className="object-cover"
+                  className="object-contain"
                   priority
                   unoptimized={!!elu.photo_url}
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
-                  <User size={120} className="text-gray-300" />
+                  <User size={100} className="text-gray-300" />
                 </div>
               )}
             </div>
 
             {/* Infos de base */}
-            <div className="p-6">
-              <h1 className="text-2xl font-bold text-gray-900 mb-2">
+            <div className="p-4 sm:p-6">
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
                 {elu.prenom} {elu.nom}
               </h1>
               
-              <div className="space-y-3 mb-6">
-                <div className="flex items-start gap-3">
-                  <Briefcase size={20} className="text-blue-600 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-sm text-gray-500">Fonction</p>
-                    <p className="font-semibold text-gray-900">{elu.fonction}</p>
+              <div className="space-y-2.5 sm:space-y-3 mb-4 sm:mb-6">
+                <div className="flex items-start gap-2 sm:gap-3">
+                  <Briefcase size={18} className="text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs text-gray-500">Fonction</p>
+                    <p className="font-semibold text-gray-900 text-sm sm:text-base">{elu.fonction}</p>
                   </div>
                 </div>
                 
                 {elu.region && (
-                  <div className="flex items-start gap-3">
-                    <MapPin size={20} className="text-blue-600 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-sm text-gray-500">Département</p>
-                      <p className="font-semibold text-gray-900">{elu.region}</p>
+                  <div className="flex items-start gap-2 sm:gap-3">
+                    <MapPin size={18} className="text-blue-600 mt-0.5 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-500">Département</p>
+                      <p className="font-semibold text-gray-900 text-sm sm:text-base">{elu.region}</p>
+                    </div>
+                  </div>
+                )}
+
+                {elu.groupe && (
+                  <div className="flex items-start gap-2 sm:gap-3">
+                    <Users size={18} className="text-blue-600 mt-0.5 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-500">Groupe politique</p>
+                      <p className="font-semibold text-gray-900 text-sm sm:text-base">{elu.groupe}</p>
+                    </div>
+                  </div>
+                )}
+
+                {elu.parti && (
+                  <div className="flex items-start gap-2 sm:gap-3">
+                    <Building2 size={18} className="text-blue-600 mt-0.5 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-500">Parti</p>
+                      <p className="font-semibold text-gray-900 text-sm sm:text-base">{elu.parti}</p>
                     </div>
                   </div>
                 )}
 
                 {elu.types_mandat && elu.types_mandat.length > 0 && (
-                  <div className="flex items-start gap-3">
-                    <Landmark size={20} className="text-blue-600 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-sm text-gray-500">Type de mandat</p>
+                  <div className="flex items-start gap-2 sm:gap-3">
+                    <Landmark size={18} className="text-blue-600 mt-0.5 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-500">Type de mandat</p>
                       <div className="flex flex-wrap gap-1 mt-1">
                         {elu.types_mandat.map((tm) => (
                           <span
@@ -199,11 +266,11 @@ export default function ProfilPage() {
                 )}
 
                 {nbDeclarations > 0 && (
-                  <div className="flex items-start gap-3">
-                    <FileText size={20} className="text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div className="flex items-start gap-2 sm:gap-3">
+                    <FileText size={18} className="text-blue-600 mt-0.5 flex-shrink-0" />
                     <div>
-                      <p className="text-sm text-gray-500">Déclarations HATVP</p>
-                      <p className="font-semibold text-gray-900">{nbDeclarations} déclaration(s)</p>
+                      <p className="text-xs text-gray-500">Déclarations HATVP</p>
+                      <p className="font-semibold text-gray-900 text-sm sm:text-base">{nbDeclarations} déclaration(s)</p>
                     </div>
                   </div>
                 )}
@@ -223,7 +290,7 @@ export default function ProfilPage() {
                         rel="noopener noreferrer"
                         className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
                       >
-                        <ExternalLink size={16} />
+                        <ExternalLink size={14} />
                         Fiche HATVP
                       </a>
                     )}
@@ -234,7 +301,7 @@ export default function ProfilPage() {
                         rel="noopener noreferrer"
                         className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
                       >
-                        <ExternalLink size={16} />
+                        <ExternalLink size={14} />
                         Assemblée Nationale
                       </a>
                     )}
@@ -245,7 +312,7 @@ export default function ProfilPage() {
                         rel="noopener noreferrer"
                         className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
                       >
-                        <ExternalLink size={16} />
+                        <ExternalLink size={14} />
                         Sénat
                       </a>
                     )}
@@ -256,7 +323,7 @@ export default function ProfilPage() {
                         rel="noopener noreferrer"
                         className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
                       >
-                        <ExternalLink size={16} />
+                        <ExternalLink size={14} />
                         Wikipedia
                       </a>
                     )}
@@ -267,36 +334,36 @@ export default function ProfilPage() {
           </div>
         </motion.div>
 
-        {/* Colonne droite - Stats et graphiques */}
-        <div className="lg:col-span-2 space-y-6">
+        {/* Colonne droite - Stats et détails */}
+        <div className="lg:col-span-2 space-y-5 sm:space-y-6">
           {/* Stats Cards */}
           {hasFinancialData ? (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.1 }}
-              className="grid grid-cols-1 sm:grid-cols-2 gap-6"
+              className="grid grid-cols-2 gap-3 sm:gap-6"
             >
-              <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
-                <p className="text-blue-100 text-sm font-medium mb-2">
+              <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-4 sm:p-6 text-white">
+                <p className="text-blue-100 text-xs sm:text-sm font-medium mb-1 sm:mb-2">
                   Patrimoine Total
                 </p>
-                <p className="text-3xl font-bold mb-1">
+                <p className="text-xl sm:text-3xl font-bold mb-0.5 sm:mb-1">
                   {formatMoney(elu.patrimoine || 0)}
                 </p>
-                <p className="text-blue-100 text-xs">
+                <p className="text-blue-100 text-[10px] sm:text-xs">
                   Déclaré à la HATVP
                 </p>
               </div>
 
-              <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg p-6 text-white">
-                <p className="text-green-100 text-sm font-medium mb-2">
+              <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg p-4 sm:p-6 text-white">
+                <p className="text-green-100 text-xs sm:text-sm font-medium mb-1 sm:mb-2">
                   Revenus Annuels
                 </p>
-                <p className="text-3xl font-bold mb-1">
+                <p className="text-xl sm:text-3xl font-bold mb-0.5 sm:mb-1">
                   {formatMoney(elu.revenus || 0)}
                 </p>
-                <p className="text-green-100 text-xs">
+                <p className="text-green-100 text-[10px] sm:text-xs">
                   Bruts déclarés
                 </p>
               </div>
@@ -306,15 +373,15 @@ export default function ProfilPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.1 }}
-              className="bg-amber-50 border border-amber-200 rounded-xl p-6"
+              className="bg-amber-50 border border-amber-200 rounded-xl p-4 sm:p-6"
             >
               <div className="flex items-start gap-3">
-                <Scale size={24} className="text-amber-600 mt-0.5 flex-shrink-0" />
+                <Scale size={22} className="text-amber-600 mt-0.5 flex-shrink-0" />
                 <div>
-                  <h3 className="text-lg font-semibold text-amber-900 mb-1">
+                  <h3 className="text-base sm:text-lg font-semibold text-amber-900 mb-1">
                     Données financières non disponibles
                   </h3>
-                  <p className="text-sm text-amber-700">
+                  <p className="text-xs sm:text-sm text-amber-700">
                     Les données patrimoniales et de revenus ne sont pas encore disponibles pour cet élu.
                     {elu.liens.hatvp && (
                       <>
@@ -327,6 +394,40 @@ export default function ProfilPage() {
                     )}
                   </p>
                 </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Détail patrimoine HATVP */}
+          {hatvpSections.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.15 }}
+              className="bg-white rounded-xl shadow-lg p-4 sm:p-6"
+            >
+              <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <TrendingUp size={20} className="text-blue-600" />
+                Détail des déclarations
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+                {hatvpSections.map(({ key, count, label, icon, value }) => (
+                  <div
+                    key={key}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-base flex-shrink-0">{icon}</span>
+                      <span className="text-sm text-gray-700 truncate">{label}</span>
+                    </div>
+                    <div className="text-right flex-shrink-0 ml-2">
+                      <span className="text-sm font-bold text-gray-900">{count}</span>
+                      {value != null && value > 0 && (
+                        <p className="text-xs text-gray-500">{formatMoney(value)}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </motion.div>
           )}
@@ -346,13 +447,13 @@ export default function ProfilPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.3 }}
-              className="bg-white rounded-xl shadow-lg p-6"
+              className="bg-white rounded-xl shadow-lg p-4 sm:p-6"
             >
-              <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <Briefcase size={22} className="text-blue-600" />
+              <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <Briefcase size={20} className="text-blue-600" />
                 Mandats et Fonctions
               </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
                 {elu.mandats.map((mandat, index) => (
                   <div
                     key={index}
@@ -372,17 +473,17 @@ export default function ProfilPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.4 }}
-              className="bg-white rounded-xl shadow-lg p-6"
+              className="bg-white rounded-xl shadow-lg p-4 sm:p-6"
             >
-              <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <FileText size={22} className="text-blue-600" />
+              <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <FileText size={20} className="text-blue-600" />
                 Déclarations HATVP
               </h3>
-              <div className="space-y-3">
+              <div className="space-y-2 sm:space-y-3">
                 {elu.declarations_csv.map((decl, index) => (
                   <div
                     key={index}
-                    className="flex items-start gap-4 p-4 bg-gray-50 rounded-lg"
+                    className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 p-3 sm:p-4 bg-gray-50 rounded-lg"
                   >
                     <div className="flex-shrink-0">
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold ${
@@ -402,7 +503,7 @@ export default function ProfilPage() {
                           En qualité de : {decl.qualite}
                         </p>
                       )}
-                      <div className="flex items-center gap-4 mt-1">
+                      <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-1">
                         {decl.date_publication && (
                           <span className="flex items-center gap-1 text-xs text-gray-500">
                             <Calendar size={12} />
@@ -451,7 +552,7 @@ export default function ProfilPage() {
               </a>
               {' '}— Open Data.
               {elu.hatvp?.hatvp_scraped_at && (
-                <> Dernière mise à jour : {formatDate(elu.hatvp.hatvp_scraped_at.split('T')[0])}.</>
+                <> Dernière mise à jour : {formatDate(String(elu.hatvp.hatvp_scraped_at).split('T')[0])}.</>
               )}
             </p>
           </motion.div>
