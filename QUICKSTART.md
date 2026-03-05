@@ -104,8 +104,10 @@ colors: {
 Exécutez le script Python :
 ```bash
 cd scripts
-python generate-elus.py --limit 50    # Test sur 50 élus
-python generate-elus.py                 # Tous les élus
+pip install -r requirements.txt         # Installer les dépendances Python
+python generate-elus.py --limit 50      # Test sur 50 élus (XML)
+python generate-elus.py --with-pdf --limit 50  # XML + PDF fallback
+python parse_pdf.py --test-elu "Yaël Braun-Pivet"  # Tester le parseur PDF
 ```
 
 ## 🚢 Déploiement sur Vercel

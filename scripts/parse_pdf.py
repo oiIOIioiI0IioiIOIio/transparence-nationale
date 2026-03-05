@@ -1,0 +1,951 @@
+#!/usr/bin/env python3
+"""
+PDF document parser for HATVP declarations.
+
+Extracts structured financial data from HATVP PDF declarations (DSP / DI)
+using text extraction with pdfplumber, falling back to OCR (pytesseract)
+when the PDF contains scanned images instead of selectable text.
+
+Sections extracted from DSP (patrimoine):
+  - Biens immobiliers
+  - Comptes bancaires / épargne
+  - Instruments financiers
+  - Participations financières
+  - Véhicules
+  - Biens mobiliers de valeur
+  - Dettes et emprunts
+  - Revenus
+
+Sources:
+  Index CSV     : https://www.hatvp.fr/livraison/opendata/liste.csv
+  PDFs          : https://www.hatvp.fr/livraison/dossiers/<nom_fichier>
+  Doc officielle: https://www.hatvp.fr/open-data/
+
+Usage:
+  python parse_pdf.py --help
+  python parse_pdf.py --test-url "https://www.hatvp.fr/livraison/dossiers/exemple.pdf"
+  python parse_pdf.py --test-elu "Yaël Braun-Pivet"
+  python parse_pdf.py --batch --limit 10
+"""
+
+import argparse
+import csv
+import io
+import json
+import os
+import re
+import sys
+import time
+import unicodedata
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+
+# ── Paths ──────────────────────────────────────────────────────────────────────
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+OUTPUT_JSON = os.path.join(PROJECT_ROOT, "public", "data", "elus.json")
+CACHE_DIR = os.path.join(PROJECT_ROOT, "public", "data", "hatvp_cache")
+PDF_CACHE_DIR = os.path.join(CACHE_DIR, "pdfs")
+INDEX_CACHE = os.path.join(CACHE_DIR, "liste.csv")
+
+# ── HATVP URLs ─────────────────────────────────────────────────────────────────
+HATVP_INDEX_URL = "https://www.hatvp.fr/livraison/opendata/liste.csv"
+HATVP_DOSSIER_BASE = "https://www.hatvp.fr/livraison/dossiers/"
+
+HEADERS = {
+    "User-Agent": "TransparenceNationale/1.0 (open source; github.com/transparence-nationale)",
+    "Accept": "application/pdf, text/csv, */*",
+}
+
+# ── Declaration types ──────────────────────────────────────────────────────────
+DSP_TYPES = {"DSP", "DSPM", "DSPFIN", "DSPMAJ"}
+DI_TYPES = {"DI", "DIM", "DIMAJ"}
+ALL_DOC_TYPES = DSP_TYPES | DI_TYPES
+
+# Minimum chars to consider the PDF has extractable text
+MIN_TEXT_LENGTH = 100
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CLI
+# ══════════════════════════════════════════════════════════════════════════════
+
+def parse_args():
+    p = argparse.ArgumentParser(
+        description="Parse HATVP PDF declarations to extract financial data."
+    )
+    p.add_argument("--test-url", type=str, help="Test with a specific PDF URL")
+    p.add_argument("--test-file", type=str, help="Test with a local PDF file")
+    p.add_argument("--test-elu", type=str, help="Test with a specific elu name")
+    p.add_argument("--batch", action="store_true",
+                   help="Process all elus that have patrimoine=0")
+    p.add_argument("--limit", type=int, default=None,
+                   help="Limit number of elus to process in batch mode")
+    p.add_argument("--delay", type=float, default=0.5,
+                   help="Delay between HTTP requests (default 0.5s)")
+    p.add_argument("--force", action="store_true",
+                   help="Re-download and re-parse even if cached")
+    p.add_argument("--dry-run", action="store_true",
+                   help="Show what would be done without modifying files")
+    p.add_argument("--no-ocr", action="store_true",
+                   help="Disable OCR fallback (faster but may miss scanned PDFs)")
+    p.add_argument("--refresh-index", action="store_true",
+                   help="Force re-download of the CSV index")
+    return p.parse_args()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Network utilities
+# ══════════════════════════════════════════════════════════════════════════════
+
+def http_get(url: str, timeout: int = 60) -> bytes | None:
+    """Download a URL and return binary content, or None on failure."""
+    req = urllib.request.Request(url, headers=HEADERS)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status == 200:
+                return resp.read()
+    except urllib.error.HTTPError as exc:
+        if exc.code not in (404, 403, 410):
+            print(f"  ⚠ HTTP {exc.code} → {url}")
+    except Exception as exc:
+        print(f"  ⚠ Network error: {exc}")
+    return None
+
+
+def download_file(url: str, cache_path: str, force: bool = False,
+                  max_age_h: float = 168, delay: float = 0.5) -> bytes | None:
+    """Download a file with local caching."""
+    if not force and os.path.exists(cache_path):
+        age_h = (time.time() - os.path.getmtime(cache_path)) / 3600
+        if age_h < max_age_h:
+            with open(cache_path, "rb") as f:
+                return f.read()
+
+    time.sleep(delay)
+    data = http_get(url)
+    if data:
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+        with open(cache_path, "wb") as f:
+            f.write(data)
+    return data
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Name normalization (shared with generate-elus.py)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def normalize_name(s: str) -> str:
+    """Normalize a name: lowercase, no accents, no hyphens."""
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    s = s.lower()
+    s = re.sub(r"[-\s]+", " ", s).strip()
+    return s
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PDF text extraction
+# ══════════════════════════════════════════════════════════════════════════════
+
+def extract_text_pdfplumber(pdf_path: str) -> str:
+    """Extract text from PDF using pdfplumber (best for structured PDFs)."""
+    try:
+        import pdfplumber
+    except ImportError:
+        print("  ⚠ pdfplumber not installed (pip install pdfplumber)")
+        return ""
+
+    text_parts = []
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text() or ""
+                text_parts.append(page_text)
+
+                # Also extract tables for structured data
+                tables = page.extract_tables()
+                for table in tables:
+                    for row in table:
+                        if row:
+                            cells = [str(cell).strip() if cell else "" for cell in row]
+                            text_parts.append(" | ".join(cells))
+    except Exception as exc:
+        print(f"  ⚠ pdfplumber error: {exc}")
+
+    return "\n".join(text_parts)
+
+
+def extract_text_ocr(pdf_path: str) -> str:
+    """Extract text from scanned PDF using OCR (pytesseract + pdf2image)."""
+    try:
+        from pdf2image import convert_from_path
+        import pytesseract
+    except ImportError:
+        print("  ⚠ OCR dependencies not installed (pip install pytesseract pdf2image)")
+        return ""
+
+    text_parts = []
+    try:
+        images = convert_from_path(pdf_path, dpi=300)
+        for i, img in enumerate(images):
+            page_text = pytesseract.image_to_string(img, lang="fra")
+            text_parts.append(page_text)
+    except Exception as exc:
+        print(f"  ⚠ OCR error: {exc}")
+
+    return "\n".join(text_parts)
+
+
+def extract_text_from_pdf(pdf_path: str, use_ocr: bool = True) -> str:
+    """
+    Extract text from a PDF file.
+    Tries pdfplumber first, falls back to OCR if text is too short.
+    """
+    text = extract_text_pdfplumber(pdf_path)
+
+    if len(text.strip()) < MIN_TEXT_LENGTH and use_ocr:
+        print("  ℹ Text extraction yielded little content, trying OCR…")
+        ocr_text = extract_text_ocr(pdf_path)
+        if len(ocr_text.strip()) > len(text.strip()):
+            text = ocr_text
+
+    return text
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Financial data extraction from text
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Section headers as they appear in HATVP PDF declarations
+SECTION_PATTERNS = {
+    "biens_immobiliers": [
+        r"(?i)biens?\s+immobiliers?",
+        r"(?i)patrimoine\s+immobilier",
+        r"(?i)immeuble[s]?\s+(bâti|non\s+bâti)",
+    ],
+    "comptes_bancaires": [
+        r"(?i)comptes?\s+bancaires?",
+        r"(?i)liquidit[ée]s?",
+        r"(?i)comptes?\s+d['\u2019]épargne",
+        r"(?i)placements?\s+(?:financiers?|bancaires?)",
+    ],
+    "instruments_financiers": [
+        r"(?i)instruments?\s+financiers?",
+        r"(?i)valeurs?\s+mobilières?",
+        r"(?i)actions?\s+(?:et|ou)\s+obligations?",
+        r"(?i)assurance[s]?[\s-]+vie",
+    ],
+    "participations_financieres": [
+        r"(?i)participation[s]?\s+(?:financières?|dans\s+des?\s+soci[ée]t[ée]s?)",
+        r"(?i)parts?\s+(?:sociales?|de\s+soci[ée]t[ée])",
+    ],
+    "vehicules": [
+        r"(?i)v[ée]hicules?",
+        r"(?i)automobiles?",
+    ],
+    "biens_mobiliers_valeur": [
+        r"(?i)biens?\s+mobiliers?\s+(?:de\s+)?(?:grande\s+)?valeur",
+        r"(?i)objets?\s+(?:de\s+)?(?:grande\s+)?valeur",
+        r"(?i)œuvres?\s+d['\u2019]art",
+    ],
+    "dettes": [
+        r"(?i)dettes?",
+        r"(?i)emprunts?",
+        r"(?i)passif",
+    ],
+    "revenus": [
+        r"(?i)revenus?",
+        r"(?i)r[ée]mun[ée]ration",
+        r"(?i)indemnit[ée]s?",
+        r"(?i)traitements?\s+(?:et|ou)\s+salaires?",
+    ],
+    "activites_professionnelles": [
+        r"(?i)activit[ée]s?\s+professionnelles?",
+        r"(?i)fonctions?\s+exerc[ée]es?",
+    ],
+    "mandats_electifs": [
+        r"(?i)mandats?\s+[ée]lectifs?",
+        r"(?i)fonctions?\s+[ée]lectives?",
+    ],
+}
+
+# Patterns for extracting monetary values
+MONEY_PATTERNS = [
+    # "123 456,78 €" or "123456.78€" or "123 456 €"
+    r"(\d[\d\s\xa0]*(?:[.,]\d{1,2})?)\s*(?:€|euros?|EUR)",
+    # "123 456,78" at end of line or before whitespace (context-dependent)
+    r"(\d{1,3}(?:[\s\xa0]\d{3})+(?:[.,]\d{1,2})?)",
+    # Simple amounts
+    r"(\d+(?:[.,]\d{1,2})?)\s*(?:€|euros?)",
+]
+
+
+def parse_amount(s: str) -> float | None:
+    """Parse a French-formatted monetary amount to float."""
+    if not s:
+        return None
+    s = s.replace("\xa0", "").replace(" ", "").replace(",", ".").strip()
+    s = re.sub(r"[^\d.\-]", "", s)
+    try:
+        val = float(s)
+        return val if val >= 0 else None
+    except ValueError:
+        return None
+
+
+def find_amounts_in_text(text: str) -> list[float]:
+    """Extract all monetary amounts from text."""
+    amounts = []
+    for pattern in MONEY_PATTERNS:
+        for match in re.finditer(pattern, text):
+            val = parse_amount(match.group(1))
+            if val is not None and val > 0:
+                amounts.append(val)
+    return amounts
+
+
+def split_into_sections(text: str) -> dict[str, str]:
+    """
+    Split the full PDF text into sections based on section headers.
+    Returns {section_name: section_text}.
+    """
+    sections = {}
+    lines = text.split("\n")
+    current_section = "header"
+    current_lines = []
+
+    for line in lines:
+        matched = False
+        for section_name, patterns in SECTION_PATTERNS.items():
+            for pattern in patterns:
+                if re.search(pattern, line):
+                    # Save previous section
+                    if current_lines:
+                        sections[current_section] = "\n".join(current_lines)
+                    current_section = section_name
+                    current_lines = [line]
+                    matched = True
+                    break
+            if matched:
+                break
+        if not matched:
+            current_lines.append(line)
+
+    # Save last section
+    if current_lines:
+        sections[current_section] = "\n".join(current_lines)
+
+    return sections
+
+
+def extract_section_items(section_text: str, section_name: str) -> list[dict]:
+    """Extract individual items from a section's text."""
+    items = []
+    amounts = find_amounts_in_text(section_text)
+
+    # Split by common item separators
+    # HATVP declarations often use numbered items or bullet points
+    item_blocks = re.split(
+        r"\n\s*(?:\d+[.)]\s*|[-•]\s*|_{3,}\s*\n)",
+        section_text
+    )
+
+    for block in item_blocks:
+        block = block.strip()
+        if not block or len(block) < 10:
+            continue
+
+        item = {"description": _clean_text(block[:500])}
+
+        # Extract amounts from this block
+        block_amounts = find_amounts_in_text(block)
+        if block_amounts:
+            # Use the largest amount as the primary value
+            item["montant_euro"] = max(block_amounts)
+            if len(block_amounts) > 1:
+                item["montants_details"] = sorted(block_amounts, reverse=True)
+
+        # Try to extract specific fields based on section type
+        if section_name == "biens_immobiliers":
+            _extract_immobilier_fields(block, item)
+        elif section_name == "revenus":
+            _extract_revenus_fields(block, item)
+        elif section_name == "instruments_financiers":
+            _extract_instrument_fields(block, item)
+
+        if any(v for k, v in item.items() if k != "description"):
+            items.append(item)
+
+    # If no structured items found but we have amounts, create a summary
+    if not items and amounts:
+        items.append({
+            "description": f"Total section {section_name}",
+            "montant_euro": sum(amounts),
+            "nb_montants_detectes": len(amounts),
+        })
+
+    return items
+
+
+def _clean_text(text: str) -> str:
+    """Clean up extracted text."""
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"[|\t]{2,}", " ", text)
+    return text
+
+
+def _extract_immobilier_fields(text: str, item: dict) -> None:
+    """Extract real estate specific fields."""
+    # Type of property
+    for label, pattern in [
+        ("Appartement", r"(?i)appartement"),
+        ("Maison", r"(?i)maison"),
+        ("Terrain", r"(?i)terrain"),
+        ("Local commercial", r"(?i)local\s+commercial"),
+        ("Immeuble", r"(?i)immeuble"),
+    ]:
+        if re.search(pattern, text):
+            item["type_bien"] = label
+            break
+
+    # Surface
+    m = re.search(r"(\d+)\s*m[²2]", text)
+    if m:
+        item["surface_m2"] = int(m.group(1))
+
+    # Location
+    for m in re.finditer(r"(?i)(?:situ[ée]e?\s+(?:à|au|en)\s+|commune\s+(?:de\s+)?)([A-ZÀ-Ü][a-zà-ü\-]+(?:\s+[A-ZÀ-Ü][a-zà-ü\-]+)*)", text):
+        item["localisation"] = m.group(1).strip()
+        break
+
+    # Mode of acquisition
+    for label, pattern in [
+        ("Achat", r"(?i)(?:achat|acquisition|achet[ée])"),
+        ("Héritage", r"(?i)(?:h[ée]ritage|succession|hérit)"),
+        ("Donation", r"(?i)donation"),
+        ("Construction", r"(?i)construction|construit"),
+    ]:
+        if re.search(pattern, text):
+            item["mode_acquisition"] = label
+            break
+
+
+def _extract_revenus_fields(text: str, item: dict) -> None:
+    """Extract revenue specific fields."""
+    for label, pattern in [
+        ("Indemnités parlementaires", r"(?i)indemnit[ée]s?\s+parlementaires?"),
+        ("Traitement", r"(?i)traitement"),
+        ("Salaire", r"(?i)salaire"),
+        ("Revenus fonciers", r"(?i)revenus?\s+fonciers?"),
+        ("Revenus mobiliers", r"(?i)revenus?\s+mobiliers?"),
+        ("Pensions", r"(?i)pensions?|retraite"),
+        ("Honoraires", r"(?i)honoraires?"),
+    ]:
+        if re.search(pattern, text):
+            item["type_revenu"] = label
+            break
+
+
+def _extract_instrument_fields(text: str, item: dict) -> None:
+    """Extract financial instrument specific fields."""
+    for label, pattern in [
+        ("Actions", r"(?i)actions?"),
+        ("Obligations", r"(?i)obligations?"),
+        ("Assurance-vie", r"(?i)assurance[\s-]+vie"),
+        ("OPCVM", r"(?i)OPCVM|FCP|SICAV"),
+        ("PEA", r"(?i)PEA"),
+        ("PEL", r"(?i)PEL"),
+    ]:
+        if re.search(pattern, text):
+            item["type_instrument"] = label
+            break
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Main PDF parsing pipeline
+# ══════════════════════════════════════════════════════════════════════════════
+
+def parse_pdf_declaration(pdf_path: str, use_ocr: bool = True) -> dict:
+    """
+    Parse a single HATVP PDF declaration and extract all financial data.
+    Returns a structured dict with all sections.
+    """
+    result = {
+        "source": "pdf",
+        "pdf_path": pdf_path,
+        "parsed_at": datetime.now(timezone.utc).isoformat(),
+        "extraction_method": "unknown",
+        "raw_text_length": 0,
+        "sections_found": [],
+    }
+
+    # Extract text
+    text = extract_text_from_pdf(pdf_path, use_ocr=use_ocr)
+    result["raw_text_length"] = len(text)
+
+    if len(text.strip()) < MIN_TEXT_LENGTH:
+        result["extraction_method"] = "failed"
+        result["error"] = "Could not extract sufficient text from PDF"
+        return result
+
+    result["extraction_method"] = "pdfplumber"  # or "ocr" if OCR was used
+
+    # Detect if this is a DSP (patrimoine) or DI (intérêts)
+    is_dsp = bool(re.search(r"(?i)d[ée]claration\s+de\s+(?:situation\s+)?patrimoin", text))
+    is_di = bool(re.search(r"(?i)d[ée]claration\s+d['\u2019]int[ée]r[êe]ts?", text))
+    result["type_detected"] = "DSP" if is_dsp else ("DI" if is_di else "unknown")
+
+    # Split into sections
+    sections = split_into_sections(text)
+    result["sections_found"] = [k for k in sections if k != "header"]
+
+    # Extract data from each section
+    totals = {
+        "immobilier": 0.0,
+        "placements": 0.0,
+        "instruments": 0.0,
+        "participations": 0.0,
+        "vehicules": 0.0,
+        "biens_mobiliers": 0.0,
+        "dettes": 0.0,
+        "revenus": 0.0,
+    }
+
+    section_mapping = {
+        "biens_immobiliers": "immobilier",
+        "comptes_bancaires": "placements",
+        "instruments_financiers": "instruments",
+        "participations_financieres": "participations",
+        "vehicules": "vehicules",
+        "biens_mobiliers_valeur": "biens_mobiliers",
+        "dettes": "dettes",
+        "revenus": "revenus",
+    }
+
+    for section_name, section_text in sections.items():
+        if section_name == "header":
+            continue
+
+        items = extract_section_items(section_text, section_name)
+        if items:
+            result[section_name] = items
+
+            # Accumulate totals
+            total_key = section_mapping.get(section_name)
+            if total_key:
+                section_total = sum(
+                    item.get("montant_euro", 0)
+                    for item in items
+                )
+                totals[total_key] += section_total
+
+    # Compute summary
+    patrimoine_brut = (
+        totals["immobilier"]
+        + totals["placements"]
+        + totals["instruments"]
+        + totals["participations"]
+        + totals["vehicules"]
+        + totals["biens_mobiliers"]
+    )
+    patrimoine_net = patrimoine_brut - totals["dettes"]
+
+    result["summary"] = {
+        "patrimoine_brut_euro": patrimoine_brut,
+        "patrimoine_net_euro": patrimoine_net,
+        "immobilier_euro": totals["immobilier"],
+        "placements_euro": totals["placements"],
+        "instruments_euro": totals["instruments"],
+        "participations_euro": totals["participations"],
+        "vehicules_euro": totals["vehicules"],
+        "biens_mobiliers_euro": totals["biens_mobiliers"],
+        "dettes_euro": totals["dettes"],
+        "revenus_euro": totals["revenus"],
+    }
+
+    return result
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CSV index
+# ══════════════════════════════════════════════════════════════════════════════
+
+def load_hatvp_index(force_refresh: bool = False, delay: float = 0.5) -> list[dict]:
+    """Download and parse the HATVP CSV index."""
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    raw = download_file(HATVP_INDEX_URL, INDEX_CACHE, force=force_refresh, delay=delay)
+    if not raw:
+        raise RuntimeError(f"Cannot download HATVP index: {HATVP_INDEX_URL}")
+
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("latin-1")
+
+    reader = csv.DictReader(io.StringIO(text), delimiter=";")
+    rows = list(reader)
+    if rows:
+        print(f"  ✓ {len(rows):,} entries — columns: {list(rows[0].keys())}")
+    return rows
+
+
+def find_pdf_urls_for_elu(csv_index: list[dict], prenom: str, nom: str) -> list[dict]:
+    """Find PDF declaration URLs for an elu from the CSV index."""
+    norm_prenom = normalize_name(prenom)
+    norm_nom = normalize_name(nom)
+    matched = []
+
+    for row in csv_index:
+        r_nom = normalize_name(row.get("nom", ""))
+        r_prenom = normalize_name(row.get("prenom", ""))
+        if r_nom == norm_nom and r_prenom == norm_prenom:
+            doc_type = (row.get("type_document") or "").strip().upper()
+            if doc_type in ALL_DOC_TYPES:
+                nom_fichier = (row.get("nom_fichier") or "").strip()
+                if nom_fichier:
+                    url = HATVP_DOSSIER_BASE + nom_fichier
+                    matched.append({
+                        "url": url,
+                        "type": doc_type,
+                        "date_publication": row.get("date_publication", ""),
+                        "nom_fichier": nom_fichier,
+                    })
+
+    # Sort by date (most recent first)
+    def sort_key(r):
+        d = r.get("date_publication", "")
+        try:
+            return datetime.strptime(d.strip(), "%Y-%m-%d")
+        except (ValueError, AttributeError):
+            return datetime.min
+    matched.sort(key=sort_key, reverse=True)
+
+    return matched
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Elu processing
+# ══════════════════════════════════════════════════════════════════════════════
+
+def process_elu_pdfs(
+    elu: dict,
+    csv_index: list[dict],
+    force: bool = False,
+    dry_run: bool = False,
+    use_ocr: bool = True,
+    delay: float = 0.5,
+) -> dict | None:
+    """
+    Download and parse PDF declarations for a single elu.
+    Returns aggregated financial data or None if nothing found.
+    """
+    prenom = elu.get("prenom", "").strip()
+    nom = elu.get("nom", "").strip()
+    if not prenom or not nom:
+        return None
+
+    pdf_entries = find_pdf_urls_for_elu(csv_index, prenom, nom)
+    if not pdf_entries:
+        return None
+
+    print(f"    📄 {len(pdf_entries)} PDF(s) found")
+
+    # Take the most recent DSP + most recent DI
+    selected = []
+    seen_categories = set()
+    for entry in pdf_entries:
+        category = "DSP" if entry["type"] in DSP_TYPES else "DI"
+        if category not in seen_categories:
+            selected.append(entry)
+            seen_categories.add(category)
+
+    aggregated = {
+        "source": "pdf",
+        "parsed_at": datetime.now(timezone.utc).isoformat(),
+        "declarations_parsed": 0,
+        "summary": {
+            "patrimoine_brut_euro": 0,
+            "patrimoine_net_euro": 0,
+            "immobilier_euro": 0,
+            "placements_euro": 0,
+            "instruments_euro": 0,
+            "participations_euro": 0,
+            "dettes_euro": 0,
+            "revenus_euro": 0,
+        },
+    }
+
+    for entry in selected:
+        url = entry["url"]
+        nom_fichier = entry["nom_fichier"]
+        cache_path = os.path.join(PDF_CACHE_DIR, nom_fichier)
+
+        print(f"    🔄 {entry['type']} : {url}")
+
+        if dry_run:
+            aggregated["declarations_parsed"] += 1
+            continue
+
+        pdf_bytes = download_file(url, cache_path, force=force,
+                                  max_age_h=168, delay=delay)
+        if not pdf_bytes:
+            print(f"    ✗ Failed to download {url}")
+            continue
+
+        # Verify it's actually a PDF
+        if not pdf_bytes[:5] == b"%PDF-":
+            print(f"    ✗ Not a valid PDF: {nom_fichier}")
+            continue
+
+        parsed = parse_pdf_declaration(cache_path, use_ocr=use_ocr)
+        aggregated["declarations_parsed"] += 1
+
+        # Merge summaries (take maximums to avoid double-counting)
+        if parsed.get("summary"):
+            for key in aggregated["summary"]:
+                existing = aggregated["summary"][key]
+                new_val = parsed["summary"].get(key, 0)
+                # For patrimoine net, take the most meaningful value
+                if key in ("patrimoine_brut_euro", "patrimoine_net_euro"):
+                    aggregated["summary"][key] = max(existing, new_val)
+                else:
+                    aggregated["summary"][key] = max(existing, new_val)
+
+        # Copy section details
+        for section in SECTION_PATTERNS:
+            if section in parsed:
+                if section not in aggregated:
+                    aggregated[section] = []
+                aggregated[section].extend(parsed[section])
+
+    if aggregated["declarations_parsed"] == 0:
+        return None
+
+    return aggregated
+
+
+def update_elu_with_pdf_data(elu: dict, pdf_data: dict) -> bool:
+    """
+    Update an elu dict with data extracted from PDF.
+    Returns True if any data was updated.
+    """
+    summary = pdf_data.get("summary", {})
+    updated = False
+
+    # Update patrimoine if PDF data is better
+    pdf_patrimoine = summary.get("patrimoine_brut_euro", 0)
+    if pdf_patrimoine > 0 and pdf_patrimoine > elu.get("patrimoine", 0):
+        elu["patrimoine"] = pdf_patrimoine
+        elu["patrimoine_source"] = "pdf_hatvp"
+        updated = True
+
+    # Update immobilier
+    pdf_immobilier = summary.get("immobilier_euro", 0)
+    if pdf_immobilier > 0 and pdf_immobilier > elu.get("immobilier", 0):
+        elu["immobilier"] = pdf_immobilier
+        updated = True
+
+    # Update placements
+    pdf_placements = summary.get("placements_euro", 0) + summary.get("instruments_euro", 0)
+    current_placements = elu.get("placements_montant", 0)
+    if pdf_placements > 0 and pdf_placements > current_placements:
+        elu["placements_montant"] = pdf_placements
+        updated = True
+
+    # Add PDF metadata
+    if not elu.get("hatvp_pdf"):
+        elu["hatvp_pdf"] = {}
+    elu["hatvp_pdf"] = {
+        "parsed_at": pdf_data.get("parsed_at", ""),
+        "declarations_parsed": pdf_data.get("declarations_parsed", 0),
+        "patrimoine_brut_euro": summary.get("patrimoine_brut_euro", 0),
+        "patrimoine_net_euro": summary.get("patrimoine_net_euro", 0),
+        "immobilier_euro": summary.get("immobilier_euro", 0),
+        "placements_euro": summary.get("placements_euro", 0),
+        "instruments_euro": summary.get("instruments_euro", 0),
+        "dettes_euro": summary.get("dettes_euro", 0),
+        "revenus_euro": summary.get("revenus_euro", 0),
+    }
+
+    return updated
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# I/O
+# ══════════════════════════════════════════════════════════════════════════════
+
+def load_elus() -> list[dict]:
+    if not os.path.exists(OUTPUT_JSON):
+        return []
+    with open(OUTPUT_JSON, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_elus(elus: list[dict]) -> None:
+    with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
+        json.dump(elus, f, ensure_ascii=False, indent=2)
+    print(f"✓ {OUTPUT_JSON} updated ({len(elus)} elus)")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Main
+# ══════════════════════════════════════════════════════════════════════════════
+
+def main():
+    args = parse_args()
+
+    print("=" * 65)
+    print("📄 HATVP PDF DECLARATION PARSER")
+    print("   Extracts financial data from PDF declarations")
+    print("   Uses pdfplumber + OCR fallback (pytesseract)")
+    if args.dry_run:
+        print("   ⚠ DRY-RUN MODE — no files will be modified")
+    if args.no_ocr:
+        print("   ⚠ OCR DISABLED")
+    print("=" * 65)
+
+    os.makedirs(PDF_CACHE_DIR, exist_ok=True)
+    use_ocr = not args.no_ocr
+
+    # ── Test with specific file ──────────────────────────────────────────────
+    if args.test_file:
+        print(f"\n🧪 Testing with local file: {args.test_file}")
+        if not os.path.exists(args.test_file):
+            print(f"  ✗ File not found: {args.test_file}")
+            sys.exit(1)
+        result = parse_pdf_declaration(args.test_file, use_ocr=use_ocr)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    # ── Test with specific URL ───────────────────────────────────────────────
+    if args.test_url:
+        print(f"\n🧪 Testing with URL: {args.test_url}")
+        filename = args.test_url.split("/")[-1]
+        cache_path = os.path.join(PDF_CACHE_DIR, filename)
+        pdf_bytes = download_file(args.test_url, cache_path, force=args.force,
+                                  delay=args.delay)
+        if not pdf_bytes:
+            print("  ✗ Failed to download PDF")
+            sys.exit(1)
+        result = parse_pdf_declaration(cache_path, use_ocr=use_ocr)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    # ── Load CSV index ───────────────────────────────────────────────────────
+    print("\n📥 Loading HATVP CSV index…")
+    csv_index = load_hatvp_index(force_refresh=args.refresh_index, delay=args.delay)
+
+    # ── Test with specific elu ───────────────────────────────────────────────
+    if args.test_elu:
+        print(f"\n🧪 Testing with elu: {args.test_elu}")
+        elus = load_elus()
+        q = normalize_name(args.test_elu)
+        elu = None
+        for e in elus:
+            full = normalize_name(f"{e.get('prenom', '')} {e.get('nom', '')}")
+            if q in full or full in q:
+                elu = e
+                break
+        if not elu:
+            parts = args.test_elu.strip().split()
+            elu = {"id": "test", "prenom": parts[0], "nom": " ".join(parts[1:])}
+
+        print(f"  Profile: {elu.get('prenom')} {elu.get('nom')}")
+        result = process_elu_pdfs(
+            elu, csv_index,
+            force=args.force,
+            dry_run=args.dry_run,
+            use_ocr=use_ocr,
+            delay=args.delay,
+        )
+        if result:
+            print(f"\n{'=' * 65}")
+            print("✅ PDF PARSING RESULT")
+            print(f"{'=' * 65}")
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print("  ✗ No PDF data found")
+        return
+
+    # ── Batch mode ───────────────────────────────────────────────────────────
+    if not args.batch:
+        print("\n⚠ No action specified. Use --test-url, --test-elu, or --batch")
+        print("   Run with --help for full usage information.")
+        return
+
+    elus = load_elus()
+    if not elus:
+        print("⚠ elus.json is empty or not found")
+        return
+
+    # Filter to elus that need PDF data (patrimoine=0)
+    candidates = [e for e in elus if e.get("patrimoine", 0) == 0]
+    print(f"\n📊 {len(candidates)} elus with patrimoine=0 (out of {len(elus)} total)")
+
+    if args.limit:
+        candidates = candidates[:args.limit]
+
+    total = len(candidates)
+    processed = 0
+    updated_count = 0
+    failed = 0
+    updated_ids: dict[str, dict] = {}
+
+    for i, elu in enumerate(candidates, 1):
+        prenom = elu.get("prenom", "")
+        nom = elu.get("nom", "")
+        elu_id = elu.get("id", f"elu-{i}")
+        print(f"\n[{i}/{total}] {prenom} {nom}")
+
+        result = process_elu_pdfs(
+            elu, csv_index,
+            force=args.force,
+            dry_run=args.dry_run,
+            use_ocr=use_ocr,
+            delay=args.delay,
+        )
+
+        if result is None:
+            failed += 1
+            print(f"  ✗ No PDF declarations found")
+            continue
+
+        processed += 1
+        summary = result.get("summary", {})
+        patrimoine = summary.get("patrimoine_brut_euro", 0)
+
+        if patrimoine > 0:
+            updated_count += 1
+            updated_ids[elu_id] = result
+            print(f"  ✓ Patrimoine: {patrimoine:,.0f} €")
+        else:
+            print(f"  ○ PDF parsed but no patrimoine extracted")
+
+        # Save detailed result
+        if not args.dry_run:
+            detail_path = os.path.join(CACHE_DIR, f"{elu_id}_pdf.json")
+            with open(detail_path, "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
+
+    # ── Update elus.json ─────────────────────────────────────────────────────
+    if not args.dry_run and updated_ids:
+        all_elus = load_elus()
+        for e in all_elus:
+            if e.get("id") in updated_ids:
+                update_elu_with_pdf_data(e, updated_ids[e["id"]])
+        save_elus(all_elus)
+
+    print(f"\n{'=' * 65}")
+    print("📊 FINAL REPORT")
+    print("=" * 65)
+    print(f"  Total candidates     : {total}")
+    print(f"  ✓ PDFs processed     : {processed}")
+    print(f"  ✓ Patrimoine updated : {updated_count}")
+    print(f"  ✗ No PDFs found      : {failed}")
+    print("=" * 65)
+
+
+if __name__ == "__main__":
+    main()

@@ -64,7 +64,7 @@ export default function PortfolioChart({ immobilier, placements, patrimoine }: P
             ))}
           </Pie>
           <Tooltip 
-            formatter={(value: number) => formatMoney(value)}
+            formatter={(value) => formatMoney(Number(value))}
           />
           <Legend />
         </PieChart>

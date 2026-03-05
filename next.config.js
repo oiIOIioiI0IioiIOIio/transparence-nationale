@@ -1,16 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  swcMinify: true,
   
   // Optimisations pour la performance
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',
   },
 
-  // Configuration des images (pas utilisées mais au cas où)
+  // Configuration des images
   images: {
-    domains: [],
     formats: ['image/avif', 'image/webp'],
   },
 
