@@ -10,6 +10,18 @@ const nextConfig = {
   // Configuration des images
   images: {
     formats: ['image/avif', 'image/webp'],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'www.assemblee-nationale.fr',
+        pathname: '/dyn/static/tribun/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'www.senat.fr',
+        pathname: '/senimg/**',
+      },
+    ],
   },
 
   // Headers de sécurité

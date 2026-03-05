@@ -57,6 +57,9 @@ HATVP_INDEX_URL = "https://www.hatvp.fr/livraison/opendata/liste.csv"
 # Le XML unique contenant TOUTES les déclarations
 HATVP_DECLARATIONS_XML_URL = "https://www.hatvp.fr/livraison/opendata/declarations.xml"
 
+# XMLs individuels via la colonne open_data du CSV
+HATVP_OPENDATA_BASE = "https://www.hatvp.fr/livraison/opendata/"
+
 # Fallback : XMLs individuels par nom_fichier (colonne du CSV)
 HATVP_DOSSIER_BASE = "https://www.hatvp.fr/livraison/dossiers/"
 
@@ -69,8 +72,16 @@ HATVP_DOSSIER_BASE = "https://www.hatvp.fr/livraison/dossiers/"
 # url_dossier   : slug URL vers la page de la déclaration
 
 # Types de déclaration à extraire
-DSP_TYPES = {"DSP", "DSPM", "DSPFIN", "DSPMAJ"}
-DI_TYPES  = {"DI", "DIM", "DIMAJ"}
+# DSP  = Déclaration de Situation Patrimoniale (patrimoine)
+# DSPM = DSP de modification
+# DSPFM = DSP de fin de mandat
+# DSPFIN = DSP (ancien format)
+# DI   = Déclaration d'Intérêts (ancien format)
+# DIM  = DI de modification
+# DIA  = Déclaration d'Intérêts et d'Activités (nouveau format depuis 2017)
+# DIAM = DIA de modification
+DSP_TYPES = {"DSP", "DSPM", "DSPFIN", "DSPMAJ", "DSPFM"}
+DI_TYPES  = {"DI", "DIM", "DIMAJ", "DIA", "DIAM"}
 ALL_DOC_TYPES = DSP_TYPES | DI_TYPES
 
 # ── Headers HTTP ──────────────────────────────────────────────────────────────
@@ -105,6 +116,8 @@ def parse_args():
                    help="Use PDF parser as fallback when XML yields no patrimoine data")
     p.add_argument("--no-ocr",           action="store_true",
                    help="Disable OCR in PDF parsing (faster)")
+    p.add_argument("--enrich-csv-only",  action="store_true",
+                   help="Enrichir elus.json depuis le CSV local (sans télécharger de XMLs)")
     return p.parse_args()
 
 
@@ -394,15 +407,19 @@ def find_csv_rows_for_elu(csv_index: list[dict], prenom: str, nom: str) -> list[
 def get_individual_xml_url(csv_row: dict) -> str | None:
     """
     Construire l'URL d'un XML individuel depuis une ligne CSV.
-    La colonne 'nom_fichier' contient le nom du PDF, mais le XML
-    est souvent disponible au même chemin avec extension .xml.
-    La colonne 'url_dossier' contient le slug vers la fiche.
+    Priorité 1 : colonne 'open_data' (contient directement le nom du fichier XML)
+    Priorité 2 : colonne 'nom_fichier' (PDF) → remplacer .pdf par .xml
     """
+    # Priorité 1 : open_data (fiable, c'est directement le XML)
+    open_data = (csv_row.get("open_data") or "").strip()
+    if open_data:
+        return HATVP_OPENDATA_BASE + open_data
+
+    # Priorité 2 : nom_fichier (PDF → XML, moins fiable)
     nom_fichier = (csv_row.get("nom_fichier") or "").strip()
     if nom_fichier:
-        # Remplacer .pdf par .xml
         base = nom_fichier.rsplit(".", 1)[0] if "." in nom_fichier else nom_fichier
-        return HATVP_DOSSIER_BASE + base + ".xml"
+        return HATVP_OPENDATA_BASE + base + ".xml"
     return None
 
 
@@ -799,6 +816,126 @@ def print_section(data: dict, section: str, nb: int = 5) -> None:
         print(f"    … et {len(items) - nb} autres")
 
 
+# Mapping type_mandat CSV → label lisible
+MANDAT_LABELS = {
+    "depute":       "Député(e)",
+    "senateur":     "Sénateur/Sénatrice",
+    "president":    "Président(e) de la République",
+    "gouvernement": "Membre du Gouvernement",
+    "europe":       "Député(e) européen(ne)",
+    "region":       "Conseiller(ère) régional(e)",
+    "departement":  "Conseiller(ère) départemental(e)",
+    "commune":      "Élu(e) municipal(e)",
+    "epci":         "Élu(e) intercommunal(e)",
+    "ctsp":         "Élu(e) collectivité territoriale",
+    "autre":        "Autre mandat",
+}
+
+
+def enrich_elus_from_csv(elus: list[dict], csv_index: list[dict]) -> None:
+    """
+    Enrichir les élus avec les métadonnées du CSV HATVP
+    (qualité, type_mandat, département, photo, etc.)
+    """
+    # Construire un index CSV par nom normalisé
+    csv_by_name: dict[str, list[dict]] = {}
+    for row in csv_index:
+        nom = normalize_name(row.get("nom", ""))
+        prenom = normalize_name(row.get("prenom", ""))
+        key = f"{prenom} {nom}"
+        csv_by_name.setdefault(key, []).append(row)
+
+    enriched = 0
+    for elu in elus:
+        prenom = elu.get("prenom", "").strip()
+        nom = elu.get("nom", "").strip()
+        key = normalize_name(f"{prenom} {nom}")
+
+        rows = csv_by_name.get(key, [])
+        if not rows:
+            continue
+
+        # Trier par date_publication (plus récent en premier)
+        def sort_key(r):
+            d = r.get("date_publication", "")
+            try:
+                return datetime.strptime(d.strip(), "%Y-%m-%d")
+            except (ValueError, AttributeError):
+                return datetime.min
+        rows.sort(key=sort_key, reverse=True)
+
+        # Récupérer la qualité la plus récente comme fonction
+        latest = rows[0]
+        qualite = (latest.get("qualite") or "").strip()
+        if qualite and (elu.get("fonction") in ("Élu(e)", "", None)):
+            elu["fonction"] = qualite
+
+        # Récupérer le département
+        dept = (latest.get("departement") or "").strip()
+        if dept and not elu.get("region"):
+            elu["region"] = f"Département {dept}" if dept.isdigit() else dept
+
+        # Photo depuis le CSV (url_photo)
+        for row in rows:
+            photo_url = (row.get("url_photo") or "").strip()
+            if photo_url:
+                elu["photo_url"] = photo_url
+                break
+
+        # Collecter tous les mandats et qualités uniques
+        mandats_set = set()
+        types_mandat_set = set()
+        declarations_info = []
+        for row in rows:
+            tm = (row.get("type_mandat") or "").strip().lower()
+            q = (row.get("qualite") or "").strip()
+            doc_type = (row.get("type_document") or "").strip().lower()
+            date_pub = (row.get("date_publication") or "").strip()
+            date_depot = (row.get("date_depot") or "").strip()
+
+            if tm:
+                types_mandat_set.add(tm)
+                label = MANDAT_LABELS.get(tm, tm.capitalize())
+                if q:
+                    mandats_set.add(q)
+                else:
+                    mandats_set.add(label)
+
+            # Garder l'info sur les déclarations disponibles
+            if doc_type:
+                declarations_info.append({
+                    "type": doc_type.upper(),
+                    "date_publication": date_pub,
+                    "date_depot": date_depot,
+                    "qualite": q,
+                    "type_mandat": tm,
+                })
+
+        if mandats_set:
+            elu["mandats"] = sorted(mandats_set)
+
+        if types_mandat_set:
+            elu["types_mandat"] = sorted(types_mandat_set)
+
+        if declarations_info:
+            elu["declarations_csv"] = declarations_info[:10]  # Limiter à 10
+
+        # Lien HATVP depuis url_dossier
+        for row in rows:
+            url_dossier = (row.get("url_dossier") or "").strip()
+            if url_dossier:
+                elu["liens"]["hatvp"] = f"https://www.hatvp.fr{url_dossier}"
+                break
+
+        # Supprimer le faux revenu 85296 si pas de données réelles
+        if elu.get("revenus", 0) == 85296:
+            elu["revenus"] = 0
+
+        enriched += 1
+
+    print(f"  ✓ {enriched} élus enrichis depuis le CSV")
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Main
 # ══════════════════════════════════════════════════════════════════════════════
@@ -829,6 +966,19 @@ def main():
         print(f"  📋 Exemple ligne 2 :")
         for k, v in csv_index[1].items():
             print(f"    {k:25s} = {v}")
+        return
+
+    # ── Mode enrichissement CSV uniquement ────────────────────────────────────
+    if args.enrich_csv_only:
+        print("\n📋 Mode enrichissement CSV uniquement…")
+        all_elus = load_elus()
+        if not all_elus:
+            print("⚠ elus.json vide ou introuvable.")
+            return
+        enrich_elus_from_csv(all_elus, csv_index)
+        if not args.dry_run:
+            save_elus(all_elus)
+        print(f"\n✅ Enrichissement terminé — {len(all_elus)} élus")
         return
 
     # ── Charger le XML global ──────────────────────────────────────────────────
@@ -958,8 +1108,28 @@ def main():
     if not args.dry_run and updated:
         all_elus = load_elus()
         for e in all_elus:
-            if e.get("id") in updated:
-                e["hatvp"] = updated[e["id"]]
+            eid = e.get("id")
+            if eid in updated:
+                resume = updated[eid]
+                e["hatvp"] = resume
+                # Mettre à jour les champs top-level avec les données HATVP
+                if resume.get("total_revenus_euro", 0) > 0:
+                    e["revenus"] = resume["total_revenus_euro"]
+                elif e.get("revenus", 0) == 85296:
+                    e["revenus"] = 0
+                pat_net = resume.get("patrimoine_net_euro", 0)
+                if pat_net:
+                    e["patrimoine"] = pat_net
+                act_brut = resume.get("total_actif_brut_euro", 0)
+                if act_brut:
+                    e["immobilier"] = resume.get("valeur_biens_immobiliers_euro", 0)
+                    e["placements_montant"] = (
+                        resume.get("valeur_instruments_financiers_euro", 0)
+                        + resume.get("valeur_participations_financieres_euro", 0)
+                        + resume.get("valeur_comptes_bancaires_euro", 0)
+                    )
+        # Enrichir les métadonnées depuis le CSV
+        enrich_elus_from_csv(all_elus, csv_index)
         save_elus(all_elus)
 
     # ── PDF fallback for elus with no patrimoine data ─────────────────────────
