@@ -16,6 +16,7 @@ const COLORS = {
 };
 
 export default function PortfolioChart({ immobilier, placements, patrimoine }: PortfolioChartProps) {
+  // placements may be an array (legacy format, always empty) or a number; use placements_montant when available
   const placementsVal = typeof placements === 'number' ? placements : 0;
   const autres = Math.max(0, patrimoine - immobilier - placementsVal);
 

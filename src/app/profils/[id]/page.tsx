@@ -173,7 +173,7 @@ export default function ProfilPage() {
                   <div className="flex items-start gap-3">
                     <MapPin size={20} className="text-blue-600 mt-0.5 flex-shrink-0" />
                     <div>
-                      <p className="text-sm text-gray-500">Circonscription</p>
+                      <p className="text-sm text-gray-500">Département</p>
                       <p className="font-semibold text-gray-900">{elu.region}</p>
                     </div>
                   </div>

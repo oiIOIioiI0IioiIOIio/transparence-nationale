@@ -15,7 +15,7 @@ export interface Elu {
   revenus: number;              // €
   patrimoine: number;           // €
   immobilier: number;           // € (détail patrimoine)
-  placements: number[] | number; // legacy compat
+  placements: number[] | number; // Legacy: was stored as array, now as number. Use placements_montant for new data.
   placements_montant?: number;  // €
   mandats: string[];            // ["Député du Rhône", ...]
   types_mandat?: string[];      // ["depute", "senateur", ...]

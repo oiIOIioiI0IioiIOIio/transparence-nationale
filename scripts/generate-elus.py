@@ -927,7 +927,7 @@ def enrich_elus_from_csv(elus: list[dict], csv_index: list[dict]) -> None:
                 elu["liens"]["hatvp"] = f"https://www.hatvp.fr{url_dossier}"
                 break
 
-        # Supprimer le faux revenu 85296 si pas de données réelles
+        # 85296 = fake default revenue (≈ député brut annuel) applied in initial data generation
         if elu.get("revenus", 0) == 85296:
             elu["revenus"] = 0
 
@@ -1116,6 +1116,7 @@ def main():
                 if resume.get("total_revenus_euro", 0) > 0:
                     e["revenus"] = resume["total_revenus_euro"]
                 elif e.get("revenus", 0) == 85296:
+                    # 85296 = fake default revenue (≈ député brut annuel) applied to all elus in initial data
                     e["revenus"] = 0
                 pat_net = resume.get("patrimoine_net_euro", 0)
                 if pat_net:
