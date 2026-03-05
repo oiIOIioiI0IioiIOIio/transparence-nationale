@@ -13,11 +13,15 @@ interface PersonCardProps {
 
 export default function PersonCard({ elu, index }: PersonCardProps) {
   const formatMoney = (value: number) => {
+    if (!value) return '—';
     if (value >= 1000000) {
       return `${(value / 1000000).toFixed(1)}M€`;
     }
     return `${(value / 1000).toFixed(0)}K€`;
   };
+
+  const photoSrc = elu.photo_url || (elu.photo !== '/photos/placeholder.jpg' ? elu.photo : '');
+  const hasFinancialData = (elu.patrimoine || 0) > 0 || (elu.revenus || 0) > 0;
 
   return (
     <motion.div
@@ -33,13 +37,14 @@ export default function PersonCard({ elu, index }: PersonCardProps) {
         >
           {/* Photo */}
           <div className="relative h-64 bg-gradient-to-br from-blue-100 to-green-100">
-            {elu.photo ? (
+            {photoSrc ? (
               <Image
-                src={elu.photo}
+                src={photoSrc}
                 alt={`${elu.prenom} ${elu.nom}`}
                 fill
                 className="object-cover"
                 sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                unoptimized={!!elu.photo_url}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
@@ -62,12 +67,26 @@ export default function PersonCard({ elu, index }: PersonCardProps) {
 
             {/* Badges */}
             <div className="flex gap-2 flex-wrap">
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-                Patrimoine: {formatMoney(elu.patrimoine)}
-              </span>
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
-                Revenus: {formatMoney(elu.revenus)}
-              </span>
+              {hasFinancialData ? (
+                <>
+                  {(elu.patrimoine || 0) > 0 && (
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
+                      Patrimoine: {formatMoney(elu.patrimoine || 0)}
+                    </span>
+                  )}
+                  {(elu.revenus || 0) > 0 && (
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+                      Revenus: {formatMoney(elu.revenus || 0)}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-600">
+                  {elu.hatvp?.nb_declarations_hatvp
+                    ? `${elu.hatvp.nb_declarations_hatvp} déclaration(s)`
+                    : 'Données en cours'}
+                </span>
+              )}
             </div>
           </div>
         </motion.div>

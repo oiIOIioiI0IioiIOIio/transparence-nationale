@@ -1,14 +1,44 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useElus, loadElus } from '@/hooks/useElus';
 import PersonCard from '@/components/PersonCard';
 import SearchBar from '@/components/SearchBar';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ChevronDown, Users, Database } from 'lucide-react';
+import { Elu } from '@/lib/types';
+
+// Nombre de fiches "vedettes" affichées par défaut
+const FEATURED_COUNT = 12;
+
+/**
+ * Sélectionner les profils les plus complets pour la page d'accueil.
+ * Critères : données financières, nombre de déclarations, photo disponible.
+ */
+function selectFeatured(elus: Elu[]): Elu[] {
+  const scored = elus.map((elu) => {
+    let score = 0;
+    if ((elu.patrimoine || 0) > 0) score += 50;
+    if ((elu.revenus || 0) > 0) score += 30;
+    if ((elu.immobilier || 0) > 0) score += 10;
+    if (elu.photo_url) score += 15;
+    if (elu.photo && elu.photo !== '/photos/placeholder.jpg') score += 15;
+    if (elu.declarations_csv && elu.declarations_csv.length > 0) score += elu.declarations_csv.length * 3;
+    if (elu.hatvp?.nb_declarations_hatvp) score += elu.hatvp.nb_declarations_hatvp * 2;
+    if (elu.mandats && elu.mandats.length > 1) score += 5;
+    // Bonus pour mandats nationaux
+    const nationalTypes = ['depute', 'senateur', 'president', 'gouvernement', 'europe'];
+    if (elu.types_mandat?.some((t) => nationalTypes.includes(t))) score += 20;
+    return { elu, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, FEATURED_COUNT).map((s) => s.elu);
+}
 
 export default function HomePage() {
-  const { loading, getFiltered } = useElus();
+  const { loading, getFiltered, searchTerm } = useElus();
   const filteredElus = getFiltered();
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     loadElus();
@@ -25,6 +55,14 @@ export default function HomePage() {
     );
   }
 
+  // Si recherche active ou "voir tout", afficher tous les résultats
+  const isSearching = searchTerm.length > 0;
+  const displayedElus = (isSearching || showAll)
+    ? filteredElus
+    : selectFeatured(filteredElus);
+
+  const totalCount = filteredElus.length;
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       {/* Hero Section */}
@@ -38,8 +76,8 @@ export default function HomePage() {
         </p>
         <div className="flex items-center justify-center gap-6 mt-6 text-sm text-gray-500">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-            <span>{filteredElus.length} élus recensés</span>
+            <Database className="w-4 h-4 text-blue-500" />
+            <span>{totalCount.toLocaleString('fr-FR')} élus recensés</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-green-500 rounded-full"></div>
@@ -51,13 +89,60 @@ export default function HomePage() {
       {/* SearchBar */}
       <SearchBar />
 
-      {/* Galerie */}
-      {filteredElus.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredElus.map((elu, index) => (
-            <PersonCard key={elu.id} elu={elu} index={index} />
-          ))}
+      {/* Section titre */}
+      {!isSearching && !showAll && (
+        <div className="flex items-center gap-3 mb-6">
+          <Users className="w-5 h-5 text-blue-600" />
+          <h3 className="text-lg font-semibold text-gray-800">
+            Profils mis en avant
+          </h3>
+          <span className="text-sm text-gray-500">
+            — les fiches les plus complètes
+          </span>
         </div>
+      )}
+
+      {/* Galerie */}
+      {displayedElus.length > 0 ? (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {displayedElus.map((elu, index) => (
+              <PersonCard key={elu.id} elu={elu} index={index} />
+            ))}
+          </div>
+
+          {/* Bouton "Voir la base complète" */}
+          {!isSearching && !showAll && totalCount > FEATURED_COUNT && (
+            <div className="text-center mt-12">
+              <button
+                onClick={() => setShowAll(true)}
+                className="inline-flex items-center gap-3 px-8 py-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors shadow-lg hover:shadow-xl font-semibold text-lg"
+              >
+                <Database className="w-5 h-5" />
+                Voir la base complète ({totalCount.toLocaleString('fr-FR')} élus)
+                <ChevronDown className="w-5 h-5" />
+              </button>
+              <p className="text-sm text-gray-500 mt-3">
+                Utilisez la recherche pour trouver un élu spécifique
+              </p>
+            </div>
+          )}
+
+          {/* Bouton retour aux vedettes */}
+          {!isSearching && showAll && (
+            <div className="text-center mt-8">
+              <button
+                onClick={() => {
+                  setShowAll(false);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                Revenir aux profils mis en avant
+              </button>
+            </div>
+          )}
+        </>
       ) : (
         <div className="text-center py-16">
           <div className="text-6xl mb-4">🔍</div>

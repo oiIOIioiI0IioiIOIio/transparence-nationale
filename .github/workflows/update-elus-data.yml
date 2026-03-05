@@ -47,6 +47,9 @@ jobs:
             python scripts/generate-elus.py
           fi
 
+      - name: Enrichir les métadonnées depuis le CSV
+        run: python scripts/generate-elus.py --enrich-csv-only
+
       - name: Vérifier les changements
         id: check_changes
         run: |

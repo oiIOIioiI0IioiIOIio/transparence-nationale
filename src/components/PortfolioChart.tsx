@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 
 interface PortfolioChartProps {
   immobilier: number;
-  placements: number;
+  placements: number | number[];
   patrimoine: number;
 }
 
@@ -16,11 +16,13 @@ const COLORS = {
 };
 
 export default function PortfolioChart({ immobilier, placements, patrimoine }: PortfolioChartProps) {
-  const autres = Math.max(0, patrimoine - immobilier - placements);
+  // placements may be an array (legacy format, always empty) or a number; use placements_montant when available
+  const placementsVal = typeof placements === 'number' ? placements : 0;
+  const autres = Math.max(0, patrimoine - immobilier - placementsVal);
 
   const data = [
     { name: 'Immobilier', value: immobilier, color: COLORS.immobilier },
-    { name: 'Placements', value: placements, color: COLORS.placements },
+    { name: 'Placements', value: placementsVal, color: COLORS.placements },
     { name: 'Autres', value: autres, color: COLORS.autres },
   ].filter(item => item.value > 0);
 
