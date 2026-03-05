@@ -34,6 +34,7 @@ import io
 import json
 import os
 import re
+import sys
 import time
 import unicodedata
 import urllib.error
@@ -100,6 +101,10 @@ def parse_args():
                    help="Afficher un extrait du XML brut (debug)")
     p.add_argument("--dump-csv-columns", action="store_true",
                    help="Afficher les colonnes du CSV index (debug)")
+    p.add_argument("--with-pdf",         action="store_true",
+                   help="Use PDF parser as fallback when XML yields no patrimoine data")
+    p.add_argument("--no-ocr",           action="store_true",
+                   help="Disable OCR in PDF parsing (faster)")
     return p.parse_args()
 
 
@@ -957,6 +962,47 @@ def main():
                 e["hatvp"] = updated[e["id"]]
         save_elus(all_elus)
 
+    # ── PDF fallback for elus with no patrimoine data ─────────────────────────
+    pdf_updated = 0
+    if args.with_pdf:
+        try:
+            from parse_pdf import process_elu_pdfs, update_elu_with_pdf_data
+        except ImportError:
+            sys.path.insert(0, SCRIPT_DIR)
+            from parse_pdf import process_elu_pdfs, update_elu_with_pdf_data
+
+        all_elus = load_elus()
+        candidates = [e for e in all_elus if e.get("patrimoine", 0) == 0]
+        if args.limit:
+            candidates = candidates[:args.limit]
+
+        if candidates:
+            print(f"\n{'=' * 65}")
+            print(f"📄 PDF FALLBACK — {len(candidates)} élus with patrimoine=0")
+            print("=" * 65)
+
+            use_ocr = not args.no_ocr
+            for i, elu in enumerate(candidates, 1):
+                prenom = elu.get("prenom", "")
+                nom = elu.get("nom", "")
+                print(f"\n  [PDF {i}/{len(candidates)}] {prenom} {nom}")
+
+                pdf_data = process_elu_pdfs(
+                    elu, csv_index,
+                    force=args.force,
+                    dry_run=args.dry_run,
+                    use_ocr=use_ocr,
+                    delay=args.delay,
+                )
+
+                if pdf_data and update_elu_with_pdf_data(elu, pdf_data):
+                    pdf_updated += 1
+                    p = elu.get("patrimoine", 0)
+                    print(f"    ✓ Patrimoine from PDF: {p:,.0f} €")
+
+            if not args.dry_run and pdf_updated:
+                save_elus(all_elus)
+
     print("\n" + "=" * 65)
     print("📊 RAPPORT FINAL")
     print("=" * 65)
@@ -964,6 +1010,8 @@ def main():
     print(f"  ✓ Trouvés dans HATVP       : {done}")
     print(f"  ✓ Avec données financières : {with_data}")
     print(f"  ✗ Non trouvés              : {not_found}")
+    if args.with_pdf:
+        print(f"  📄 Patrimoine via PDF      : {pdf_updated}")
     print(f"  Détails dans               : {CACHE_DIR}/")
     print("=" * 65)
 

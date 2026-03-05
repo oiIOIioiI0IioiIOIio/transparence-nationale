@@ -49,8 +49,8 @@ transparence-nationale/
 │   │   └── profils/[id]/
 │   │       └── page.tsx          # Page de profil détaillée
 │   ├── components/
-│   │   ├── Header.tsx            # En-tête avec mode nuit
-│   │   ├── PersonCard.tsx        # Carte élu (sans photo)
+│   │   ├── PersonCard.tsx        # Carte élu
+│   │   ├── PortfolioChart.tsx    # Graphique patrimoine (recharts)
 │   │   └── SearchBar.tsx         # Recherche et tri avancés
 │   ├── hooks/
 │   │   └── useElus.ts            # Store Zustand
@@ -60,7 +60,10 @@ transparence-nationale/
 │   └── data/
 │       └── elus.json             # Base de données élus
 ├── scripts/
-│   └── generate-elus.py          # Script de récupération HATVP
+│   ├── generate-elus.py          # Script de récupération HATVP (XML)
+│   ├── parse_pdf.py              # Parseur PDF avec OCR (pdfplumber + pytesseract)
+│   ├── scrape-photos.py          # Téléchargement photos officielles
+│   └── requirements.txt          # Dépendances Python
 ├── package.json
 ├── next.config.js
 ├── tailwind.config.js
@@ -100,6 +103,35 @@ transparence-nationale/
     "hatvp_scraped_at": "2024-01-15T10:30:00Z"
   }
 }
+```
+
+## 📄 Parseur PDF (avec OCR)
+
+Le script `scripts/parse_pdf.py` extrait les données financières directement depuis les déclarations PDF de la HATVP, en complément du parsing XML. Il utilise :
+- **pdfplumber** pour l'extraction de texte des PDFs structurés
+- **pytesseract + pdf2image** (OCR) en fallback pour les PDFs scannés
+
+### Installation des dépendances Python
+
+```bash
+pip install -r scripts/requirements.txt
+
+# Pour l'OCR (optionnel), installer aussi tesseract :
+# Ubuntu/Debian : sudo apt install tesseract-ocr tesseract-ocr-fra
+# macOS         : brew install tesseract
+```
+
+### Utilisation
+
+```bash
+# Tester avec un élu spécifique
+python scripts/parse_pdf.py --test-elu "Yaël Braun-Pivet"
+
+# Traiter en batch les élus sans données patrimoine
+python scripts/parse_pdf.py --batch --limit 50
+
+# Intégrer au pipeline principal (XML + PDF fallback)
+python scripts/generate-elus.py --with-pdf --limit 50
 ```
 
 ## 📝 Licence
