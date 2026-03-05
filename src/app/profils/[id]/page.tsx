@@ -109,7 +109,7 @@ export default function ProfilPage() {
     }
   };
 
-  const hasFinancialData = elu.patrimoine > 0 || elu.revenus > 0 || elu.immobilier > 0;
+  const hasFinancialData = (elu.patrimoine || 0) > 0 || (elu.revenus || 0) > 0 || (elu.immobilier || 0) > 0;
   const placementsMontant = elu.placements_montant || (typeof elu.placements === 'number' ? elu.placements : 0);
   const photoSrc = elu.photo_url || (elu.photo !== '/photos/placeholder.jpg' ? elu.photo : '');
   const nbDeclarations = elu.hatvp?.nb_declarations_hatvp || elu.declarations_csv?.length || 0;
@@ -282,7 +282,7 @@ export default function ProfilPage() {
                   Patrimoine Total
                 </p>
                 <p className="text-3xl font-bold mb-1">
-                  {formatMoney(elu.patrimoine)}
+                  {formatMoney(elu.patrimoine || 0)}
                 </p>
                 <p className="text-blue-100 text-xs">
                   Déclaré à la HATVP
@@ -294,7 +294,7 @@ export default function ProfilPage() {
                   Revenus Annuels
                 </p>
                 <p className="text-3xl font-bold mb-1">
-                  {formatMoney(elu.revenus)}
+                  {formatMoney(elu.revenus || 0)}
                 </p>
                 <p className="text-green-100 text-xs">
                   Bruts déclarés
@@ -334,14 +334,14 @@ export default function ProfilPage() {
           {/* Graphique - seulement si données financières */}
           {hasFinancialData && (
             <PortfolioChart
-              immobilier={elu.immobilier}
+              immobilier={elu.immobilier || 0}
               placements={placementsMontant}
-              patrimoine={elu.patrimoine}
+              patrimoine={elu.patrimoine || 0}
             />
           )}
 
           {/* Mandats */}
-          {elu.mandats.length > 0 && (
+          {elu.mandats && elu.mandats.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}

@@ -21,7 +21,7 @@ export default function PersonCard({ elu, index }: PersonCardProps) {
   };
 
   const photoSrc = elu.photo_url || (elu.photo !== '/photos/placeholder.jpg' ? elu.photo : '');
-  const hasFinancialData = elu.patrimoine > 0 || elu.revenus > 0;
+  const hasFinancialData = (elu.patrimoine || 0) > 0 || (elu.revenus || 0) > 0;
 
   return (
     <motion.div
@@ -69,14 +69,14 @@ export default function PersonCard({ elu, index }: PersonCardProps) {
             <div className="flex gap-2 flex-wrap">
               {hasFinancialData ? (
                 <>
-                  {elu.patrimoine > 0 && (
+                  {(elu.patrimoine || 0) > 0 && (
                     <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-                      Patrimoine: {formatMoney(elu.patrimoine)}
+                      Patrimoine: {formatMoney(elu.patrimoine || 0)}
                     </span>
                   )}
-                  {elu.revenus > 0 && (
+                  {(elu.revenus || 0) > 0 && (
                     <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
-                      Revenus: {formatMoney(elu.revenus)}
+                      Revenus: {formatMoney(elu.revenus || 0)}
                     </span>
                   )}
                 </>

@@ -17,14 +17,14 @@ const FEATURED_COUNT = 12;
 function selectFeatured(elus: Elu[]): Elu[] {
   const scored = elus.map((elu) => {
     let score = 0;
-    if (elu.patrimoine > 0) score += 50;
-    if (elu.revenus > 0) score += 30;
-    if (elu.immobilier > 0) score += 10;
+    if ((elu.patrimoine || 0) > 0) score += 50;
+    if ((elu.revenus || 0) > 0) score += 30;
+    if ((elu.immobilier || 0) > 0) score += 10;
     if (elu.photo_url) score += 15;
     if (elu.photo && elu.photo !== '/photos/placeholder.jpg') score += 15;
     if (elu.declarations_csv && elu.declarations_csv.length > 0) score += elu.declarations_csv.length * 3;
     if (elu.hatvp?.nb_declarations_hatvp) score += elu.hatvp.nb_declarations_hatvp * 2;
-    if (elu.mandats.length > 1) score += 5;
+    if (elu.mandats && elu.mandats.length > 1) score += 5;
     // Bonus pour mandats nationaux
     const nationalTypes = ['depute', 'senateur', 'president', 'gouvernement', 'europe'];
     if (elu.types_mandat?.some((t) => nationalTypes.includes(t))) score += 20;

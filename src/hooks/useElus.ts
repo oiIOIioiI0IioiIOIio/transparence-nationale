@@ -33,9 +33,9 @@ export const useElus = create<ElusStore>((set, get) => ({
     const sorted = [...filtered].sort((a, b) => {
       switch (sortBy) {
         case 'patrimoine':
-          return b.patrimoine - a.patrimoine;
+          return (b.patrimoine || 0) - (a.patrimoine || 0);
         case 'revenus':
-          return b.revenus - a.revenus;
+          return (b.revenus || 0) - (a.revenus || 0);
         case 'nom':
         default:
           return `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`);
