@@ -149,9 +149,11 @@ export default function ProfilPage() {
   const nbDeclarations = elu.hatvp?.nb_declarations_hatvp || elu.declarations_csv?.length || 0;
 
   // Collecter les sections HATVP détaillées qui ont des données
+  // Exclure les champs meta (nb_declarations_hatvp) et ne garder que les sections de contenu
+  const HATVP_META_FIELDS = new Set(['nb_declarations_hatvp']);
   const hatvpSections = elu.hatvp
     ? Object.entries(elu.hatvp)
-        .filter(([key, val]) => key.startsWith('nb_') && key !== 'nb_declarations_hatvp' && typeof val === 'number' && val > 0)
+        .filter(([key, val]) => key.startsWith('nb_') && !HATVP_META_FIELDS.has(key) && typeof val === 'number' && val > 0)
         .map(([key, val]) => ({
           key,
           count: val as number,

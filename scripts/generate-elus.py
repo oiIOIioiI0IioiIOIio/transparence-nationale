@@ -801,6 +801,17 @@ def fetch_data_for_elu(
     return result
 
 
+# Noms des champs financiers à chercher dans les items XML pour calculer les totaux
+FINANCIAL_FIELD_NAMES = (
+    "valeur_euro", "solde_euro", "montant_euro",
+    "valeur", "solde", "montant", "valeurParts",
+    "capitalRestantDu", "remuneration_euro", "indemnite_euro",
+    "valeurVenale", "prixAcquisition", "valeurDeclaree",
+    "valeurEstimee", "montantAnnuel", "montantTotal",
+    "montantBrut", "montantNet",
+)
+
+
 def build_resume_hatvp(data: dict) -> dict:
     """Construire un résumé compact pour elus.json."""
 
@@ -808,12 +819,7 @@ def build_resume_hatvp(data: dict) -> dict:
         n = len(items)
         total = 0.0
         for i in items:
-            for k in ("valeur_euro", "solde_euro", "montant_euro",
-                       "valeur", "solde", "montant", "valeurParts",
-                       "capitalRestantDu", "remuneration_euro", "indemnite_euro",
-                       "valeurVenale", "prixAcquisition", "valeurDeclaree",
-                       "valeurEstimee", "montantAnnuel", "montantTotal",
-                       "montantBrut", "montantNet"):
+            for k in FINANCIAL_FIELD_NAMES:
                 v = i.get(k)
                 if v is not None:
                     if isinstance(v, str):

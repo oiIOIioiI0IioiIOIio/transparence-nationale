@@ -28,7 +28,7 @@ export default function PersonCard({ elu, index }: PersonCardProps) {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay: index * 0.03 }}
+      transition={{ duration: 0.4, delay: Math.min(index * 0.03, 0.5) }}
     >
       <Link href={`/profils/${elu.id}`}>
         <motion.div
