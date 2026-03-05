@@ -41,7 +41,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timezone
 
 # ── Chemins ────────────────────────────────────────────────────────────────────
 SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
@@ -565,7 +565,7 @@ def fetch_data_for_elu(
     result = {
         "prenom":                prenom,
         "nom":                   nom,
-        "scraped_at":            datetime.utcnow().isoformat() + "Z",
+        "scraped_at":            datetime.now(timezone.utc).isoformat(),
         "declarations_trouvees": 0,
         "declarations":          [],
     }

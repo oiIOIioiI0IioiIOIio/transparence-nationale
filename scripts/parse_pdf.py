@@ -39,7 +39,7 @@ import time
 import unicodedata
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -475,7 +475,7 @@ def parse_pdf_declaration(pdf_path: str, use_ocr: bool = True) -> dict:
     result = {
         "source": "pdf",
         "pdf_path": pdf_path,
-        "parsed_at": datetime.utcnow().isoformat() + "Z",
+        "parsed_at": datetime.now(timezone.utc).isoformat(),
         "extraction_method": "unknown",
         "raw_text_length": 0,
         "sections_found": [],
@@ -663,7 +663,7 @@ def process_elu_pdfs(
 
     aggregated = {
         "source": "pdf",
-        "parsed_at": datetime.utcnow().isoformat() + "Z",
+        "parsed_at": datetime.now(timezone.utc).isoformat(),
         "declarations_parsed": 0,
         "summary": {
             "patrimoine_brut_euro": 0,
