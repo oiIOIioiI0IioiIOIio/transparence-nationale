@@ -661,14 +661,90 @@ export default function ProfilPage() {
                     </div>
                   )}
 
+                  {/* Détails activités (entreprises, rémunérations) */}
+                  {elu.hatvp?.details_activites && elu.hatvp.details_activites.length > 0 && (
+                    <div>
+                      <h4 className="text-base font-semibold text-neutral-200 mb-3 flex items-center gap-2 border-b border-neutral-700 pb-2">
+                        <Briefcase size={16} className="text-yellow-400" />
+                        {lang === 'fr' ? 'Détail des activités et entreprises' : 'Activities & Companies Detail'}
+                      </h4>
+                      <div className="space-y-2">
+                        {elu.hatvp.details_activites.map((act, idx) => (
+                          <div key={idx} className="p-2.5 bg-neutral-900/60 rounded-lg text-sm border border-neutral-700">
+                            {act.denomination && <p className="text-white font-medium">{act.denomination}</p>}
+                            {act.fonction && <p className="text-neutral-400 text-xs mt-0.5">{act.fonction}</p>}
+                            {act.remuneration && <p className="text-yellow-400 text-xs mt-0.5 font-semibold">{act.remuneration}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Détails mandats (organismes, rémunérations) */}
+                  {elu.hatvp?.details_mandats && elu.hatvp.details_mandats.length > 0 && (
+                    <div>
+                      <h4 className="text-base font-semibold text-neutral-200 mb-3 flex items-center gap-2 border-b border-neutral-700 pb-2">
+                        <Landmark size={16} className="text-red-400" />
+                        {lang === 'fr' ? 'Détail des mandats et rémunérations' : 'Mandate & Salary Detail'}
+                      </h4>
+                      <div className="space-y-2">
+                        {elu.hatvp.details_mandats.map((m, idx) => (
+                          <div key={idx} className="p-2.5 bg-neutral-900/60 rounded-lg text-sm border border-neutral-700">
+                            {m.mandat && <p className="text-white font-medium">{m.mandat}</p>}
+                            {m.organisme && <p className="text-neutral-400 text-xs mt-0.5">{m.organisme}</p>}
+                            {m.remuneration && <p className="text-yellow-400 text-xs mt-0.5 font-semibold">{m.remuneration}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Détails participations (sociétés, types) */}
+                  {elu.hatvp?.details_participations && elu.hatvp.details_participations.length > 0 && (
+                    <div>
+                      <h4 className="text-base font-semibold text-neutral-200 mb-3 flex items-center gap-2 border-b border-neutral-700 pb-2">
+                        <Building2 size={16} className="text-neutral-300" />
+                        {lang === 'fr' ? 'Détail des participations et sociétés' : 'Participations & Companies Detail'}
+                      </h4>
+                      <div className="space-y-2">
+                        {elu.hatvp.details_participations.map((p, idx) => (
+                          <div key={idx} className="p-2.5 bg-neutral-900/60 rounded-lg text-sm border border-neutral-700">
+                            {p.denomination && <p className="text-white font-medium">{p.denomination}</p>}
+                            {p.type && <p className="text-neutral-400 text-xs mt-0.5">{p.type}</p>}
+                            {p.valeur && <p className="text-yellow-400 text-xs mt-0.5 font-semibold">{p.valeur}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Détails revenus (types, organismes, montants) */}
+                  {elu.hatvp?.details_revenus && elu.hatvp.details_revenus.length > 0 && (
+                    <div>
+                      <h4 className="text-base font-semibold text-neutral-200 mb-3 flex items-center gap-2 border-b border-neutral-700 pb-2">
+                        <Receipt size={16} className="text-yellow-400" />
+                        {lang === 'fr' ? 'Détail des revenus par source' : 'Income Detail by Source'}
+                      </h4>
+                      <div className="space-y-2">
+                        {elu.hatvp.details_revenus.map((r, idx) => (
+                          <div key={idx} className="p-2.5 bg-neutral-900/60 rounded-lg text-sm border border-neutral-700">
+                            {r.type && <p className="text-white font-medium">{r.type}</p>}
+                            {r.organisme && <p className="text-neutral-400 text-xs mt-0.5">{r.organisme}</p>}
+                            {r.montant && <p className="text-yellow-400 text-xs mt-0.5 font-semibold">{r.montant}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Note source */}
-                  <div className="text-xs text-neutral-500 pt-2 border-t">
-                    Données agrégées à partir des déclarations HATVP disponibles pour cet élu.
+                  <div className="text-xs text-neutral-500 pt-2 border-t border-neutral-700">
+                    {t('profil.note_source', lang)}
                     {elu.liens.hatvp && (
                       <>
-                        {' '}Pour consulter le détail complet :{' '}
-                        <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline text-red-400">
-                          fiche HATVP
+                        {' '}{t('profil.see_full', lang)}{' '}
+                        <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline text-yellow-400">
+                          {t('profil.fiche_hatvp', lang)}
                         </a>
                       </>
                     )}
