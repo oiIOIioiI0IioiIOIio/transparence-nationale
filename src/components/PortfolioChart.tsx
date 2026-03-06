@@ -2,6 +2,7 @@
 
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import { motion } from 'framer-motion';
+import { useLang, t } from '@/lib/i18n';
 
 interface PortfolioChartProps {
   immobilier: number;
@@ -10,27 +11,28 @@ interface PortfolioChartProps {
 }
 
 const COLORS = {
-  immobilier: '#3b82f6', // bleu
-  placements: '#10b981',  // vert
-  autres: '#f97316',      // orange
+  immobilier: '#DC2626', // red
+  placements: '#F59E0B', // yellow
+  autres: '#A3A3A3',     // neutral gray
 };
 
 export default function PortfolioChart({ immobilier, placements, patrimoine }: PortfolioChartProps) {
+  const { lang } = useLang();
   // placements may be an array (legacy format, always empty) or a number; use placements_montant when available
   const placementsVal = typeof placements === 'number' ? placements : 0;
   const autres = Math.max(0, patrimoine - immobilier - placementsVal);
 
   const data = [
-    { name: 'Immobilier', value: immobilier, color: COLORS.immobilier },
-    { name: 'Placements', value: placementsVal, color: COLORS.placements },
-    { name: 'Autres', value: autres, color: COLORS.autres },
+    { name: t('chart.immobilier', lang), value: immobilier, color: COLORS.immobilier },
+    { name: t('chart.placements', lang), value: placementsVal, color: COLORS.placements },
+    { name: t('chart.autres', lang), value: autres, color: COLORS.autres },
   ].filter(item => item.value > 0);
 
   const formatMoney = (value: number) => {
     if (value >= 1000000) {
-      return `${(value / 1000000).toFixed(1)}M€`;
+      return `${(value / 1000000).toFixed(1)}M\u00A0\u20AC`;
     }
-    return `${(value / 1000).toFixed(0)}K€`;
+    return `${(value / 1000).toFixed(0)}K\u00A0\u20AC`;
   };
 
   const formatPercent = (value: number) => {
@@ -43,10 +45,10 @@ export default function PortfolioChart({ immobilier, placements, patrimoine }: P
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.5, delay: 0.2 }}
-      className="bg-white rounded-xl shadow-lg p-6"
+      className="bg-neutral-800 rounded-xl shadow-lg p-6 border border-neutral-700"
     >
-      <h3 className="text-xl font-bold text-gray-900 mb-4">
-        Composition du Patrimoine
+      <h3 className="text-xl font-bold text-white mb-4">
+        {t('profil.composition', lang)}
       </h3>
       
       <ResponsiveContainer width="100%" height={300}>
@@ -67,8 +69,10 @@ export default function PortfolioChart({ immobilier, placements, patrimoine }: P
           </Pie>
           <Tooltip 
             formatter={(value) => formatMoney(Number(value))}
+            contentStyle={{ backgroundColor: '#262626', border: '1px solid #404040', borderRadius: '8px', color: '#fff' }}
+            labelStyle={{ color: '#d4d4d4' }}
           />
-          <Legend />
+          <Legend wrapperStyle={{ color: '#d4d4d4' }} />
         </PieChart>
       </ResponsiveContainer>
 
@@ -81,9 +85,9 @@ export default function PortfolioChart({ immobilier, placements, patrimoine }: P
               style={{ backgroundColor: item.color }}
             />
             <div>
-              <p className="text-sm font-semibold text-gray-700">{item.name}</p>
-              <p className="text-lg font-bold text-gray-900">{formatMoney(item.value)}</p>
-              <p className="text-xs text-gray-500">{formatPercent(item.value)}</p>
+              <p className="text-sm font-semibold text-neutral-300">{item.name}</p>
+              <p className="text-lg font-bold text-white">{formatMoney(item.value)}</p>
+              <p className="text-xs text-neutral-500">{formatPercent(item.value)}</p>
             </div>
           </div>
         ))}

@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { Elu } from '@/lib/types';
 import { User, MapPin, Briefcase } from 'lucide-react';
 import { useElus } from '@/hooks/useElus';
+import { useLang, t } from '@/lib/i18n';
 
 interface PersonCardProps {
   elu: Elu;
@@ -14,6 +15,7 @@ interface PersonCardProps {
 
 export default function PersonCard({ elu, index }: PersonCardProps) {
   const showPhotos = useElus((s) => s.showPhotos);
+  const { lang } = useLang();
 
   const formatMoney = (value: number) => {
     if (!value) return '--';
@@ -37,12 +39,12 @@ export default function PersonCard({ elu, index }: PersonCardProps) {
     >
       <Link href={`/profils/${elu.id}`}>
         <motion.div
-          whileHover={{ y: -4, boxShadow: '0 12px 24px rgba(0, 0, 0, 0.12)' }}
+          whileHover={{ y: -4, boxShadow: '0 12px 24px rgba(220, 38, 38, 0.15)' }}
           transition={{ duration: 0.2 }}
-          className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl cursor-pointer h-full flex flex-row"
+          className="bg-neutral-800 rounded-xl overflow-hidden shadow-md hover:shadow-xl cursor-pointer h-full flex flex-row border border-neutral-700 hover:border-red-600 transition-colors"
         >
           {/* Photo ou icone */}
-          <div className="relative w-28 sm:w-32 min-h-[8rem] flex-shrink-0 bg-gradient-to-br from-blue-100 to-green-100">
+          <div className="relative w-28 sm:w-32 min-h-[8rem] flex-shrink-0 bg-gradient-to-br from-red-900/40 to-neutral-800">
             {photoSrc ? (
               <Image
                 src={photoSrc}
@@ -54,7 +56,7 @@ export default function PersonCard({ elu, index }: PersonCardProps) {
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
-                <User size={48} className="text-gray-300" />
+                <User size={48} className="text-neutral-600" />
               </div>
             )}
           </div>
@@ -62,20 +64,20 @@ export default function PersonCard({ elu, index }: PersonCardProps) {
           {/* Contenu */}
           <div className="flex-1 p-3 sm:p-4 flex flex-col justify-between min-w-0">
             <div>
-              <h3 className="text-base sm:text-lg font-bold text-gray-900 truncate">
+              <h3 className="text-base sm:text-lg font-bold text-white truncate">
                 {elu.prenom} {elu.nom}
               </h3>
-              <p className="text-xs sm:text-sm text-blue-600 font-medium truncate mt-0.5">
+              <p className="text-xs sm:text-sm text-red-400 font-medium truncate mt-0.5">
                 {elu.fonction}
               </p>
               {elu.region && (
-                <p className="text-xs text-gray-500 flex items-center gap-1 mt-1 truncate">
+                <p className="text-xs text-neutral-400 flex items-center gap-1 mt-1 truncate">
                   <MapPin size={12} className="flex-shrink-0" />
                   {elu.region}
                 </p>
               )}
               {elu.groupe && (
-                <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5 truncate">
+                <p className="text-xs text-neutral-400 flex items-center gap-1 mt-0.5 truncate">
                   <Briefcase size={12} className="flex-shrink-0" />
                   {elu.groupe}
                 </p>
@@ -87,21 +89,21 @@ export default function PersonCard({ elu, index }: PersonCardProps) {
               {hasFinancialData ? (
                 <>
                   {(elu.patrimoine || 0) > 0 && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-blue-100 text-blue-800">
-                      Patrimoine: {formatMoney(elu.patrimoine || 0)}
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-red-900/60 text-red-300 border border-red-700">
+                      {t('card.patrimoine', lang)}: {formatMoney(elu.patrimoine || 0)}
                     </span>
                   )}
                   {(elu.revenus || 0) > 0 && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-green-100 text-green-800">
-                      Revenus: {formatMoney(elu.revenus || 0)}
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-yellow-900/60 text-yellow-300 border border-yellow-700">
+                      {t('card.revenus', lang)}: {formatMoney(elu.revenus || 0)}
                     </span>
                   )}
                 </>
               ) : (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-gray-100 text-gray-600">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-neutral-700 text-neutral-300">
                   {nbDeclarations > 0
-                    ? `${nbDeclarations} déclaration(s)`
-                    : 'Données en cours'}
+                    ? `${nbDeclarations} ${t('card.declarations', lang)}`
+                    : t('card.data_pending', lang)}
                 </span>
               )}
             </div>
