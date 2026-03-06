@@ -815,6 +815,7 @@ FINANCIAL_FIELD_NAMES = (
 def build_resume_hatvp(data: dict) -> dict:
     """Construire un résumé compact pour elus.json."""
 
+    # Cap detail lists to keep elus.json payload manageable (~6 MB total)
     MAX_DETAIL_ITEMS = 20
 
     def count_and_total(items: list[dict]) -> tuple[int, float]:
