@@ -64,13 +64,19 @@ export interface Elu {
 
 export type SortBy = "nom" | "patrimoine" | "revenus";
 
+export type MandatFilter = "" | "depute" | "senateur" | "president" | "gouvernement" | "europe" | "region" | "departement" | "commune" | "epci" | "ctsp" | "autre";
+
 export interface ElusStore {
   elus: Elu[];
   loading: boolean;
   searchTerm: string;
   sortBy: SortBy;
+  mandatFilter: MandatFilter;
+  showPhotos: boolean;
   
   setSearchTerm: (term: string) => void;
   setSortBy: (sort: SortBy) => void;
+  setMandatFilter: (filter: MandatFilter) => void;
+  setShowPhotos: (show: boolean) => void;
   getFiltered: () => Elu[];
 }

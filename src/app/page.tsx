@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useElus, loadElus } from '@/hooks/useElus';
 import PersonCard from '@/components/PersonCard';
 import SearchBar from '@/components/SearchBar';
-import { Loader2, ChevronDown, Users, Database } from 'lucide-react';
+import { Loader2, ChevronDown, Users, Database, Search } from 'lucide-react';
 import { Elu } from '@/lib/types';
 
 // Nombre de fiches "vedettes" affichées par défaut
@@ -145,9 +145,9 @@ export default function HomePage() {
         </>
       ) : (
         <div className="text-center py-16">
-          <div className="text-6xl mb-4">🔍</div>
+          <Search className="w-16 h-16 text-gray-300 mx-auto mb-4" />
           <h3 className="text-2xl font-bold text-gray-900 mb-2">
-            Aucun résultat trouvé
+            Aucun resultat trouve
           </h3>
           <p className="text-gray-600">
             Essayez de modifier votre recherche
