@@ -374,6 +374,13 @@ def extract_section_items(section_text: str, section_name: str) -> list[dict]:
             _extract_revenus_fields(block, item)
         elif section_name == "instruments_financiers":
             _extract_instrument_fields(block, item)
+        elif section_name in ("activites_professionnelles",
+                              "activites_anterieures",
+                              "activites_consultant"):
+            _extract_activites_fields(block, item)
+        elif section_name in ("participations_financieres",
+                              "participations_organes"):
+            _extract_company_name(block, item)
 
         if any(v for k, v in item.items() if k != "description"):
             items.append(item)
@@ -447,6 +454,22 @@ def _extract_revenus_fields(text: str, item: dict) -> None:
             item["type_revenu"] = label
             break
 
+    # Extract company/society names
+    _extract_company_name(text, item)
+
+    # Extract salary amounts specifically
+    salary_match = re.search(
+        r"(?i)(?:salaire|r[ée]mun[ée]ration|traitement)"
+        r"\s*[:;]?\s*(?:de\s+)?(\d[\d\s.,]*)\s*(?:€|euros?)",
+        text,
+    )
+    if salary_match:
+        raw = salary_match.group(1).replace(" ", "").replace(",", ".")
+        try:
+            item["salaire_euro"] = float(raw)
+        except ValueError:
+            pass
+
 
 def _extract_instrument_fields(text: str, item: dict) -> None:
     """Extract financial instrument specific fields."""
@@ -461,6 +484,52 @@ def _extract_instrument_fields(text: str, item: dict) -> None:
         if re.search(pattern, text):
             item["type_instrument"] = label
             break
+
+
+def _extract_company_name(text: str, item: dict) -> None:
+    """Extract company/society name from text."""
+    # Match explicit legal forms followed by a name
+    m = re.search(
+        r"(?i)(?:soci[ée]t[ée]|entreprise|SARL|SAS|SA|SCI|EURL|SASU|SNC)"
+        r"\s+([\w][\w\s&\-']{2,60}?)(?:\s*[,.(]|\s*$)",
+        text,
+    )
+    if m:
+        item["denomination"] = _clean_text(m.group(1))
+        return
+    # Match "dénomination :" pattern
+    m = re.search(r"(?i)d[ée]nomination\s*[:;]\s*(.+?)(?:\s*[,\n]|$)", text)
+    if m:
+        item["denomination"] = _clean_text(m.group(1)[:120])
+
+
+def _extract_activites_fields(text: str, item: dict) -> None:
+    """Extract professional activity fields."""
+    # Organisation/company name
+    _extract_company_name(text, item)
+
+    # Role/function description
+    for pattern in [
+        r"(?i)(?:fonction|qualit[ée]|poste|r[ôo]le)\s*[:;]\s*(.+?)(?:\s*[,\n]|$)",
+        r"(?i)(?:en\s+qualit[ée]\s+de|en\s+tant\s+que)\s+(.+?)(?:\s*[,.\n]|$)",
+    ]:
+        m = re.search(pattern, text)
+        if m:
+            item["fonction"] = _clean_text(m.group(1)[:200])
+            break
+
+    # Remuneration amount
+    m = re.search(
+        r"(?i)(?:r[ée]mun[ée]ration|salaire|indemnit[ée]|r[ée]tribution)"
+        r"\s*[:;]?\s*(?:de\s+)?(\d[\d\s.,]*)\s*(?:€|euros?)",
+        text,
+    )
+    if m:
+        raw = m.group(1).replace(" ", "").replace(",", ".")
+        try:
+            item["remuneration_euro"] = float(raw)
+        except ValueError:
+            pass
 
 
 # ══════════════════════════════════════════════════════════════════════════════
