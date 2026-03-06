@@ -6,16 +6,16 @@ import { SortBy, MandatFilter } from '@/lib/types';
 
 const MANDAT_OPTIONS: { value: MandatFilter; label: string }[] = [
   { value: '', label: 'Tous les mandats' },
-  { value: 'depute', label: 'Depute(e)s' },
-  { value: 'senateur', label: 'Senateurs/Senatrices' },
-  { value: 'president', label: 'President(e) de la Republique' },
+  { value: 'depute', label: 'Député(e)s' },
+  { value: 'senateur', label: 'Sénateurs/Sénatrices' },
+  { value: 'president', label: 'Président(e) de la République' },
   { value: 'gouvernement', label: 'Gouvernement' },
-  { value: 'europe', label: 'Depute(e)s europeens' },
-  { value: 'region', label: 'Conseillers regionaux' },
-  { value: 'departement', label: 'Conseillers departementaux' },
-  { value: 'commune', label: 'Elus municipaux' },
-  { value: 'epci', label: 'Elus intercommunaux' },
-  { value: 'ctsp', label: 'Collectivites territoriales' },
+  { value: 'europe', label: 'Député(e)s européens' },
+  { value: 'region', label: 'Conseillers régionaux' },
+  { value: 'departement', label: 'Conseillers départementaux' },
+  { value: 'commune', label: 'Élus municipaux' },
+  { value: 'epci', label: 'Élus intercommunaux' },
+  { value: 'ctsp', label: 'Collectivités territoriales' },
   { value: 'autre', label: 'Autres mandats' },
 ];
 
@@ -30,7 +30,7 @@ export default function SearchBar() {
           <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
           <input
             type="text"
-            placeholder="Rechercher un elu (nom, fonction, region...)"
+            placeholder="Rechercher un élu (nom, fonction, région...)"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none transition-colors"
@@ -71,7 +71,7 @@ export default function SearchBar() {
           }`}
         >
           {showPhotos ? <ImageIcon size={16} /> : <ImageOff size={16} />}
-          {showPhotos ? 'Photos activees' : 'Photos desactivees'}
+          {showPhotos ? 'Photos activées' : 'Photos désactivées'}
         </button>
       </div>
     </div>

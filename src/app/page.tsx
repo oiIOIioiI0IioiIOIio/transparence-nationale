@@ -147,7 +147,7 @@ export default function HomePage() {
         <div className="text-center py-16">
           <Search className="w-16 h-16 text-gray-300 mx-auto mb-4" />
           <h3 className="text-2xl font-bold text-gray-900 mb-2">
-            Aucun resultat trouve
+            Aucun résultat trouvé
           </h3>
           <p className="text-gray-600">
             Essayez de modifier votre recherche

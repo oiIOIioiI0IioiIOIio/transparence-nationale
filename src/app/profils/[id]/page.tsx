@@ -34,35 +34,35 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   DIAM: "DIA — Modification",
 };
 
-// Labels pour les sections HATVP detaillees (sans emojis, avec icones Lucide)
+// Labels pour les sections HATVP détaillées (sans emojis, avec icônes Lucide)
 const HATVP_SECTION_CONFIG: Record<string, { label: string; category: 'patrimoine' | 'interets' | 'autre' }> = {
   nb_biens_immobiliers:            { label: 'Biens immobiliers',            category: 'patrimoine' },
   nb_parts_sci:                    { label: 'Parts de SCI',                 category: 'patrimoine' },
   nb_comptes_bancaires:            { label: 'Comptes bancaires',            category: 'patrimoine' },
   nb_assurances_vie:               { label: 'Assurances vie',               category: 'patrimoine' },
-  nb_valeurs_bourse:               { label: 'Valeurs cotees en bourse',     category: 'patrimoine' },
-  nb_valeurs_non_bourse:           { label: 'Valeurs non cotees',           category: 'patrimoine' },
+  nb_valeurs_bourse:               { label: 'Valeurs cotées en bourse',     category: 'patrimoine' },
+  nb_valeurs_non_bourse:           { label: 'Valeurs non cotées',           category: 'patrimoine' },
   nb_instruments_financiers:       { label: 'Instruments financiers',       category: 'patrimoine' },
-  nb_participations_financieres:   { label: 'Participations financieres',   category: 'patrimoine' },
+  nb_participations_financieres:   { label: 'Participations financières',   category: 'patrimoine' },
   nb_fonds:                        { label: 'Fonds',                        category: 'patrimoine' },
   nb_biens_divers:                 { label: 'Biens divers',                 category: 'patrimoine' },
   nb_autres_biens:                 { label: 'Autres biens',                 category: 'patrimoine' },
-  nb_biens_etrangers:              { label: 'Biens a l\'etranger',          category: 'patrimoine' },
-  nb_vehicules:                    { label: 'Vehicules',                    category: 'patrimoine' },
+  nb_biens_etrangers:              { label: 'Biens à l\'étranger',          category: 'patrimoine' },
+  nb_vehicules:                    { label: 'Véhicules',                    category: 'patrimoine' },
   nb_biens_mobiliers_valeur:       { label: 'Biens mobiliers de valeur',    category: 'patrimoine' },
   nb_dettes:                       { label: 'Dettes et emprunts',           category: 'patrimoine' },
-  nb_revenus:                      { label: 'Revenus declares',             category: 'patrimoine' },
-  nb_evenements_majeurs:           { label: 'Evenements patrimoniaux',      category: 'patrimoine' },
-  nb_activites_consultant:         { label: 'Activites de consultant',      category: 'interets' },
-  nb_activites_professionnelles:   { label: 'Activites professionnelles',   category: 'interets' },
-  nb_activites_anterieures:        { label: 'Activites anterieures',        category: 'interets' },
-  nb_mandats_electifs:             { label: 'Mandats electifs',             category: 'interets' },
-  nb_participations_organes:       { label: 'Participations a des organes', category: 'interets' },
-  nb_fonctions_benevoles:          { label: 'Fonctions benevoles',          category: 'interets' },
-  nb_activites_conjoint:           { label: 'Activites du conjoint',        category: 'interets' },
-  nb_activites_collaborateurs:     { label: 'Activites collaborateurs',     category: 'interets' },
-  nb_autres_liens_interets:        { label: 'Autres liens d\'interets',     category: 'interets' },
-  nb_autres_activites:             { label: 'Autres activites',             category: 'interets' },
+  nb_revenus:                      { label: 'Revenus déclarés',             category: 'patrimoine' },
+  nb_evenements_majeurs:           { label: 'Événements patrimoniaux',      category: 'patrimoine' },
+  nb_activites_consultant:         { label: 'Activités de consultant',      category: 'interets' },
+  nb_activites_professionnelles:   { label: 'Activités professionnelles',   category: 'interets' },
+  nb_activites_anterieures:        { label: 'Activités antérieures',        category: 'interets' },
+  nb_mandats_electifs:             { label: 'Mandats électifs',             category: 'interets' },
+  nb_participations_organes:       { label: 'Participations à des organes', category: 'interets' },
+  nb_fonctions_benevoles:          { label: 'Fonctions bénévoles',          category: 'interets' },
+  nb_activites_conjoint:           { label: 'Activités du conjoint',        category: 'interets' },
+  nb_activites_collaborateurs:     { label: 'Activités collaborateurs',     category: 'interets' },
+  nb_autres_liens_interets:        { label: 'Autres liens d\'intérêts',     category: 'interets' },
+  nb_autres_activites:             { label: 'Autres activités',             category: 'interets' },
   nb_fonctions_gouvernementales:   { label: 'Fonctions gouvernementales',   category: 'interets' },
   nb_fonctions_consultatives:      { label: 'Fonctions consultatives',      category: 'interets' },
   nb_participations_exploitant:    { label: 'Participations exploitant',    category: 'interets' },
@@ -109,7 +109,7 @@ export default function ProfilPage() {
         <div className="text-center py-16">
           <User size={64} className="text-gray-300 mx-auto mb-4" />
           <h3 className="text-2xl font-bold text-gray-900 mb-2">
-            Elu non trouve
+            Élu non trouvé
           </h3>
           <button
             onClick={() => router.push('/')}
@@ -149,7 +149,7 @@ export default function ProfilPage() {
   const photoSrc = elu.photo_url || (elu.photo !== '/photos/placeholder.jpg' ? elu.photo : '');
   const nbDeclarations = elu.hatvp?.nb_declarations_hatvp || elu.declarations_csv?.length || 0;
 
-  // Collecter les sections HATVP detaillees qui ont des donnees
+  // Collecter les sections HATVP détaillées qui ont des données
   // Exclure les champs meta (nb_declarations_hatvp) et ne garder que les sections de contenu
   const HATVP_META_FIELDS = new Set(['nb_declarations_hatvp']);
   const hatvpSections = elu.hatvp
@@ -164,7 +164,7 @@ export default function ProfilPage() {
         }))
     : [];
 
-  // Separer patrimoine et interets pour l'affichage detaille
+  // Séparer patrimoine et intérêts pour l'affichage détaillé
   const patrimoineSections = hatvpSections.filter((s) => s.category === 'patrimoine');
   const interetsSections = hatvpSections.filter((s) => s.category === 'interets');
 
@@ -421,14 +421,14 @@ export default function ProfilPage() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg sm:text-xl font-bold text-gray-900 flex items-center gap-2">
                   <TrendingUp size={20} className="text-blue-600" />
-                  Synthese des declarations
+                  Synthèse des déclarations
                 </h3>
                 <button
                   onClick={() => setShowDetails(!showDetails)}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                 >
                   <Info size={14} />
-                  {showDetails ? 'Masquer les details' : 'Voir les details'}
+                  {showDetails ? 'Masquer les détails' : 'Voir les détails'}
                   {showDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                 </button>
               </div>
@@ -454,7 +454,7 @@ export default function ProfilPage() {
                 ))}
               </div>
 
-              {/* Vue detaillee (expandable) */}
+              {/* Vue détaillée (expandable) */}
               {showDetails && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
@@ -508,7 +508,7 @@ export default function ProfilPage() {
                                 <div key={key} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg text-sm">
                                   <span className="text-gray-700">{label}</span>
                                   <div className="text-right">
-                                    <span className="font-semibold text-gray-900">{count} element{count > 1 ? 's' : ''}</span>
+                                    <span className="font-semibold text-gray-900">{count} élément{count > 1 ? 's' : ''}</span>
                                     {value != null && value > 0 && (
                                       <span className="ml-2 text-xs text-gray-500">({formatMoney(value)})</span>
                                     )}
@@ -541,7 +541,7 @@ export default function ProfilPage() {
                                 <div key={key} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg text-sm">
                                   <span className="text-gray-700">{label}</span>
                                   <div className="text-right">
-                                    <span className="font-semibold text-gray-900">{count} element{count > 1 ? 's' : ''}</span>
+                                    <span className="font-semibold text-gray-900">{count} élément{count > 1 ? 's' : ''}</span>
                                     {value != null && value > 0 && (
                                       <span className="ml-2 text-xs text-gray-500">({formatMoney(value)})</span>
                                     )}
@@ -578,7 +578,7 @@ export default function ProfilPage() {
                                 <div key={key} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg text-sm">
                                   <span className="text-gray-700">{label}</span>
                                   <div className="text-right">
-                                    <span className="font-semibold text-gray-900">{count} element{count > 1 ? 's' : ''}</span>
+                                    <span className="font-semibold text-gray-900">{count} élément{count > 1 ? 's' : ''}</span>
                                     {value != null && value > 0 && (
                                       <span className="ml-2 text-xs text-gray-500">({formatMoney(value)})</span>
                                     )}
@@ -603,7 +603,7 @@ export default function ProfilPage() {
                                 <div key={key} className="flex items-center justify-between p-2.5 bg-red-50 rounded-lg text-sm border border-red-100">
                                   <span className="text-red-700">{label}</span>
                                   <div className="text-right">
-                                    <span className="font-semibold text-red-900">{count} element{count > 1 ? 's' : ''}</span>
+                                    <span className="font-semibold text-red-900">{count} élément{count > 1 ? 's' : ''}</span>
                                     {value != null && value > 0 && (
                                       <span className="ml-2 text-xs text-red-600">({formatMoney(value)})</span>
                                     )}
@@ -614,12 +614,12 @@ export default function ProfilPage() {
                         </div>
                       )}
 
-                      {/* Revenus declares */}
+                      {/* Revenus déclarés */}
                       {patrimoineSections.filter(s => s.key === 'nb_revenus').length > 0 && (
                         <div className="mb-4">
                           <h5 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
                             <Receipt size={14} className="text-green-500" />
-                            Revenus declares
+                            Revenus déclarés
                           </h5>
                           <div className="space-y-2">
                             {patrimoineSections
@@ -646,13 +646,13 @@ export default function ProfilPage() {
                     <div>
                       <h4 className="text-base font-semibold text-gray-800 mb-3 flex items-center gap-2 border-b pb-2">
                         <Briefcase size={16} className="text-blue-600" />
-                        Interets et activites declares
+                        Intérêts et activités déclarés
                       </h4>
                       <div className="space-y-2">
                         {interetsSections.map(({ key, count, label }) => (
                           <div key={key} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg text-sm">
                             <span className="text-gray-700">{label}</span>
-                            <span className="font-semibold text-gray-900">{count} element{count > 1 ? 's' : ''}</span>
+                            <span className="font-semibold text-gray-900">{count} élément{count > 1 ? 's' : ''}</span>
                           </div>
                         ))}
                       </div>
@@ -661,10 +661,10 @@ export default function ProfilPage() {
 
                   {/* Note source */}
                   <div className="text-xs text-gray-400 pt-2 border-t">
-                    Donnees agregees a partir des declarations HATVP disponibles pour cet elu.
+                    Données agrégées à partir des déclarations HATVP disponibles pour cet élu.
                     {elu.liens.hatvp && (
                       <>
-                        {' '}Pour consulter le detail complet :{' '}
+                        {' '}Pour consulter le détail complet :{' '}
                         <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline text-blue-500">
                           fiche HATVP
                         </a>
