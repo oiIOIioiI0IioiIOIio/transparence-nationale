@@ -815,6 +815,9 @@ FINANCIAL_FIELD_NAMES = (
 def build_resume_hatvp(data: dict) -> dict:
     """Construire un résumé compact pour elus.json."""
 
+    # Cap detail lists to keep elus.json payload manageable (~6 MB total)
+    MAX_DETAIL_ITEMS = 20
+
     def count_and_total(items: list[dict]) -> tuple[int, float]:
         n = len(items)
         total = 0.0
@@ -828,6 +831,69 @@ def build_resume_hatvp(data: dict) -> dict:
                         total += v
                         break
         return n, total
+
+    def _first_financial(item: dict):
+        """Return the first numeric financial value found in an item."""
+        for k in FINANCIAL_FIELD_NAMES:
+            v = item.get(k)
+            if v is not None:
+                if isinstance(v, str):
+                    v = parse_montant(v)
+                if isinstance(v, (int, float)):
+                    return v
+        return None
+
+    def _compact(d: dict) -> dict:
+        """Remove keys with empty/None values to keep output compact."""
+        return {k: v for k, v in d.items() if v not in (None, "", 0, 0.0)}
+
+    def _extract_details_activites(items: list[dict]) -> list[dict]:
+        details = []
+        for item in items[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "denomination": item.get("denomination") or item.get("denomination_label") or item.get("employeur") or "",
+                "remuneration": _first_financial(item),
+                "fonction": item.get("fonction") or item.get("fonction_label") or item.get("activite") or item.get("activite_label") or "",
+            })
+            if d:
+                details.append(d)
+        return details
+
+    def _extract_details_mandats(items: list[dict]) -> list[dict]:
+        details = []
+        for item in items[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "mandat": item.get("mandat") or item.get("mandat_label") or item.get("typeMandat") or item.get("typeMandat_label") or "",
+                "organisme": item.get("organisme") or item.get("organisme_label") or item.get("collectivite") or item.get("collectivite_label") or "",
+                "remuneration": _first_financial(item),
+            })
+            if d:
+                details.append(d)
+        return details
+
+    def _extract_details_participations(items: list[dict]) -> list[dict]:
+        details = []
+        for item in items[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "denomination": item.get("denomination") or item.get("denomination_label") or item.get("designation") or "",
+                "type": item.get("nature") or item.get("nature_label") or item.get("type") or item.get("type_label") or "",
+                "valeur": _first_financial(item),
+            })
+            if d:
+                details.append(d)
+        return details
+
+    def _extract_details_revenus(items: list[dict]) -> list[dict]:
+        details = []
+        for item in items[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "type": item.get("type_revenu") or item.get("nature") or item.get("nature_label") or item.get("description") or "",
+                "organisme": item.get("organisme") or item.get("organisme_label") or item.get("denomination") or item.get("employeur") or "",
+                "montant": _first_financial(item),
+            })
+            if d:
+                details.append(d)
+        return details
 
     resume = {
         "nb_declarations_hatvp": data.get("declarations_trouvees", 0),
@@ -870,6 +936,34 @@ def build_resume_hatvp(data: dict) -> dict:
         resume["patrimoine_net_euro"]   = patrimoine_brut - total_dettes
     if total_revenus:
         resume["total_revenus_euro"] = total_revenus
+
+    # Detailed item lists
+    activites = data.get("activites_professionnelles", [])
+    if activites:
+        details = _extract_details_activites(activites)
+        if details:
+            resume["details_activites"] = details
+
+    mandats = data.get("mandats_electifs", [])
+    if mandats:
+        details = _extract_details_mandats(mandats)
+        if details:
+            resume["details_mandats"] = details
+
+    participations = (
+        data.get("participations_financieres", [])
+        + data.get("participations_organes", [])
+    )
+    if participations:
+        details = _extract_details_participations(participations)
+        if details:
+            resume["details_participations"] = details
+
+    revenus = data.get("revenus", [])
+    if revenus:
+        details = _extract_details_revenus(revenus)
+        if details:
+            resume["details_revenus"] = details
 
     return resume
 

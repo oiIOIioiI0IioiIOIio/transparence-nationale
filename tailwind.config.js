@@ -12,6 +12,18 @@ module.exports = {
         border: 'hsl(var(--border))',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
+        // Pokédex-inspired palette
+        pokedex: {
+          red: '#DC2626',
+          'red-dark': '#991B1B',
+          'red-light': '#FEE2E2',
+          yellow: '#F59E0B',
+          'yellow-dark': '#B45309',
+          'yellow-light': '#FEF3C7',
+          black: '#171717',
+          'black-light': '#262626',
+          gray: '#404040',
+        },
       },
       fontFamily: {
         sans: [

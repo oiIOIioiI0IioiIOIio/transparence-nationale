@@ -1,159 +1,112 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useElus, loadElus } from '@/hooks/useElus';
-import PersonCard from '@/components/PersonCard';
-import SearchBar from '@/components/SearchBar';
-import { Loader2, ChevronDown, Users, Database, Search } from 'lucide-react';
-import { Elu } from '@/lib/types';
-
-// Nombre de fiches "vedettes" affichées par défaut
-const FEATURED_COUNT = 12;
-
-/**
- * Sélectionner les profils les plus complets pour la page d'accueil.
- * Critères : données financières, nombre de déclarations, photo disponible.
- */
-function selectFeatured(elus: Elu[]): Elu[] {
-  const scored = elus.map((elu) => {
-    let score = 0;
-    if ((elu.patrimoine || 0) > 0) score += 50;
-    if ((elu.revenus || 0) > 0) score += 30;
-    if ((elu.immobilier || 0) > 0) score += 10;
-    if (elu.photo_url) score += 15;
-    if (elu.photo && elu.photo !== '/photos/placeholder.jpg') score += 15;
-    if (elu.declarations_csv && elu.declarations_csv.length > 0) score += elu.declarations_csv.length * 3;
-    if (elu.hatvp?.nb_declarations_hatvp) score += elu.hatvp.nb_declarations_hatvp * 2;
-    if (elu.mandats && elu.mandats.length > 1) score += 5;
-    // Bonus pour mandats nationaux
-    const nationalTypes = ['depute', 'senateur', 'president', 'gouvernement', 'europe'];
-    if (elu.types_mandat?.some((t) => nationalTypes.includes(t))) score += 20;
-    return { elu, score };
-  });
-
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, FEATURED_COUNT).map((s) => s.elu);
-}
+import { useLang, t } from '@/lib/i18n';
+import Link from 'next/link';
+import {
+  Scale,
+  Wallet,
+  FileText,
+  Briefcase,
+  ExternalLink,
+  ArrowRight,
+  MapPin,
+  Users as UsersIcon,
+} from 'lucide-react';
 
 export default function HomePage() {
-  const { loading, getFiltered, searchTerm } = useElus();
-  const filteredElus = getFiltered();
-  const [showAll, setShowAll] = useState(false);
-
-  useEffect(() => {
-    loadElus();
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Chargement des données...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Si recherche active ou "voir tout", afficher tous les résultats
-  const isSearching = searchTerm.length > 0;
-  const displayedElus = (isSearching || showAll)
-    ? filteredElus
-    : selectFeatured(filteredElus);
-
-  const totalCount = filteredElus.length;
+  const { lang } = useLang();
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      {/* Hero Section */}
-      <div className="text-center mb-12">
-        <h2 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-4">
-          Patrimoine des Élus Français
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      {/* Hero */}
+      <section className="text-center mb-16">
+        <h2 className="text-4xl sm:text-5xl font-black text-white mb-4 tracking-tight">
+          {t('home.hero.title', lang)}
         </h2>
-        <p className="text-lg text-gray-600 max-w-3xl mx-auto">
-          Explorez de manière interactive le patrimoine et les revenus des représentants 
-          de la République grâce aux données officielles de la HATVP
+        <p className="text-base sm:text-lg text-neutral-300 max-w-2xl mx-auto leading-relaxed">
+          {t('home.hero.lead', lang)}
         </p>
-        <div className="flex items-center justify-center gap-6 mt-6 text-sm text-gray-500">
-          <div className="flex items-center gap-2">
-            <Database className="w-4 h-4 text-blue-500" />
-            <span>{totalCount.toLocaleString('fr-FR')} élus recensés</span>
+        <p className="text-xs text-neutral-500 mt-4">
+          {t('home.hero.source', lang)}
+        </p>
+      </section>
+
+      {/* Example card with legend */}
+      <section className="mb-16">
+        <h3 className="text-xl font-bold text-yellow-400 mb-6 text-center">
+          {t('home.how.title', lang)}
+        </h3>
+
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          {/* Annotated example card */}
+          <div className="lg:col-span-2 bg-neutral-800 rounded-2xl border-2 border-red-600 overflow-hidden shadow-xl">
+            <div className="bg-gradient-to-br from-red-700 to-red-900 h-36 flex items-center justify-center">
+              <div className="w-20 h-20 rounded-full bg-neutral-700 flex items-center justify-center">
+                <span className="text-neutral-400 text-3xl font-black">?</span>
+              </div>
+            </div>
+            <div className="p-5 space-y-3">
+              <h4 className="text-lg font-bold text-white">{t('home.example.name', lang)}</h4>
+              <p className="text-sm text-red-400 font-semibold">{t('home.example.fonction', lang)}</p>
+              <p className="text-xs text-neutral-400 flex items-center gap-1">
+                <MapPin size={12} className="text-neutral-500" />
+                {t('home.example.region', lang)}
+              </p>
+              <p className="text-xs text-neutral-400 flex items-center gap-1">
+                <UsersIcon size={12} className="text-neutral-500" />
+                {t('home.example.groupe', lang)}
+              </p>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-900/60 text-red-300 border border-red-700">
+                  {t('card.patrimoine', lang)}: 1.2M EUR
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-900/60 text-yellow-300 border border-yellow-700">
+                  {t('card.revenus', lang)}: 85K EUR
+                </span>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-            <span>Données HATVP officielles</span>
-          </div>
-        </div>
-      </div>
 
-      {/* SearchBar */}
-      <SearchBar />
-
-      {/* Section titre */}
-      {!isSearching && !showAll && (
-        <div className="flex items-center gap-3 mb-6">
-          <Users className="w-5 h-5 text-blue-600" />
-          <h3 className="text-lg font-semibold text-gray-800">
-            Profils mis en avant
-          </h3>
-          <span className="text-sm text-gray-500">
-            — les fiches les plus complètes
-          </span>
-        </div>
-      )}
-
-      {/* Galerie */}
-      {displayedElus.length > 0 ? (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
-            {displayedElus.map((elu, index) => (
-              <PersonCard key={elu.id} elu={elu} index={index} />
+          {/* Legend */}
+          <div className="lg:col-span-3 space-y-3">
+            {[
+              { icon: Scale, color: 'text-red-400', bg: 'bg-red-900/30', key: 'home.legend.patrimoine' },
+              { icon: Wallet, color: 'text-yellow-400', bg: 'bg-yellow-900/30', key: 'home.legend.revenus' },
+              { icon: FileText, color: 'text-neutral-300', bg: 'bg-neutral-800', key: 'home.legend.declarations' },
+              { icon: Briefcase, color: 'text-neutral-300', bg: 'bg-neutral-800', key: 'home.legend.mandats' },
+              { icon: ExternalLink, color: 'text-neutral-300', bg: 'bg-neutral-800', key: 'home.legend.liens' },
+            ].map(({ icon: Icon, color, bg, key }) => (
+              <div key={key} className={`flex items-start gap-3 ${bg} rounded-xl p-3 border border-neutral-700`}>
+                <Icon size={18} className={`${color} mt-0.5 flex-shrink-0`} />
+                <p className="text-sm text-neutral-200">{t(key, lang)}</p>
+              </div>
             ))}
           </div>
-
-          {/* Bouton "Voir la base complète" */}
-          {!isSearching && !showAll && totalCount > FEATURED_COUNT && (
-            <div className="text-center mt-12">
-              <button
-                onClick={() => setShowAll(true)}
-                className="inline-flex items-center gap-3 px-8 py-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors shadow-lg hover:shadow-xl font-semibold text-lg"
-              >
-                <Database className="w-5 h-5" />
-                Voir la base complète ({totalCount.toLocaleString('fr-FR')} élus)
-                <ChevronDown className="w-5 h-5" />
-              </button>
-              <p className="text-sm text-gray-500 mt-3">
-                Utilisez la recherche pour trouver un élu spécifique
-              </p>
-            </div>
-          )}
-
-          {/* Bouton retour aux vedettes */}
-          {!isSearching && showAll && (
-            <div className="text-center mt-8">
-              <button
-                onClick={() => {
-                  setShowAll(false);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                Revenir aux profils mis en avant
-              </button>
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="text-center py-16">
-          <Search className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-2xl font-bold text-gray-900 mb-2">
-            Aucun résultat trouvé
-          </h3>
-          <p className="text-gray-600">
-            Essayez de modifier votre recherche
-          </p>
         </div>
-      )}
+      </section>
+
+      {/* Methodology */}
+      <section className="mb-16 bg-neutral-800 rounded-2xl border border-neutral-700 p-6 sm:p-8">
+        <h3 className="text-lg font-bold text-yellow-400 mb-4">
+          {t('home.methodo.title', lang)}
+        </h3>
+        <ol className="space-y-2 text-sm text-neutral-300 list-decimal list-inside">
+          <li>{t('home.methodo.1', lang)}</li>
+          <li>{t('home.methodo.2', lang)}</li>
+          <li>{t('home.methodo.3', lang)}</li>
+        </ol>
+      </section>
+
+      {/* CTA */}
+      <div className="text-center">
+        <Link
+          href="/liste"
+          className="inline-flex items-center gap-3 px-8 py-4 bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-lg hover:shadow-xl font-bold text-lg transition-colors"
+        >
+          {t('home.cta', lang)}
+          <ArrowRight className="w-5 h-5" />
+        </Link>
+      </div>
     </div>
   );
 }

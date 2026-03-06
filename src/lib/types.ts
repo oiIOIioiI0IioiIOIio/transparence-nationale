@@ -56,6 +56,11 @@ export interface Elu {
     valeur_fonds_euro?: number;
     valeur_dettes_euro?: number;
     valeur_revenus_euro?: number;
+    // Detailed extracted data (company names, salaries, etc.)
+    details_activites?: { denomination?: string; remuneration?: string; fonction?: string }[];
+    details_mandats?: { mandat?: string; organisme?: string; remuneration?: string }[];
+    details_participations?: { denomination?: string; type?: string; valeur?: string }[];
+    details_revenus?: { type?: string; organisme?: string; montant?: string }[];
     [key: string]: unknown;
   };
   groupe?: string;
