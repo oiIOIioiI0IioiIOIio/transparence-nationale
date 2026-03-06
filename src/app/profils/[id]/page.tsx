@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
-import { ArrowLeft, ExternalLink, User, Briefcase, MapPin, Calendar, FileText, Scale, Building2, Landmark, Users, TrendingUp } from 'lucide-react';
+import { ArrowLeft, ExternalLink, User, Briefcase, MapPin, Calendar, FileText, Scale, Building2, Landmark, Users, TrendingUp, Home, BarChart3, Wallet, Package, AlertTriangle, Receipt, ChevronDown, ChevronUp, Info } from 'lucide-react';
 import { Elu } from '@/lib/types';
 import PortfolioChart from '@/components/PortfolioChart';
 
@@ -34,38 +34,38 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   DIAM: "DIA — Modification",
 };
 
-// Labels pour les sections HATVP détaillées
-const HATVP_SECTION_LABELS: Record<string, { label: string; icon: string }> = {
-  nb_biens_immobiliers:            { label: 'Biens immobiliers',            icon: '🏠' },
-  nb_parts_sci:                    { label: 'Parts de SCI',                 icon: '🏗️' },
-  nb_comptes_bancaires:            { label: 'Comptes bancaires',            icon: '🏦' },
-  nb_assurances_vie:               { label: 'Assurances vie',               icon: '🛡️' },
-  nb_valeurs_bourse:               { label: 'Valeurs cotées',               icon: '📈' },
-  nb_valeurs_non_bourse:           { label: 'Valeurs non cotées',           icon: '📊' },
-  nb_instruments_financiers:       { label: 'Instruments financiers',       icon: '📈' },
-  nb_participations_financieres:   { label: 'Participations financières',   icon: '🏢' },
-  nb_fonds:                        { label: 'Fonds',                        icon: '💰' },
-  nb_biens_divers:                 { label: 'Biens divers',                 icon: '🎨' },
-  nb_autres_biens:                 { label: 'Autres biens',                 icon: '📦' },
-  nb_biens_etrangers:              { label: 'Biens à l\'étranger',          icon: '🌍' },
-  nb_vehicules:                    { label: 'Véhicules',                    icon: '🚗' },
-  nb_biens_mobiliers_valeur:       { label: 'Biens mobiliers de valeur',    icon: '💎' },
-  nb_dettes:                       { label: 'Dettes & emprunts',            icon: '📉' },
-  nb_revenus:                      { label: 'Revenus',                      icon: '💶' },
-  nb_evenements_majeurs:           { label: 'Événements majeurs',           icon: '⚡' },
-  nb_activites_consultant:         { label: 'Activités de consultant',      icon: '🔍' },
-  nb_activites_professionnelles:   { label: 'Activités professionnelles',   icon: '💼' },
-  nb_activites_anterieures:        { label: 'Activités antérieures',        icon: '📋' },
-  nb_mandats_electifs:             { label: 'Mandats électifs',             icon: '🗳️' },
-  nb_participations_organes:       { label: 'Participations à des organes', icon: '🏛️' },
-  nb_fonctions_benevoles:          { label: 'Fonctions bénévoles',          icon: '🤝' },
-  nb_activites_conjoint:           { label: 'Activités du conjoint',        icon: '👥' },
-  nb_activites_collaborateurs:     { label: 'Activités collaborateurs',     icon: '👤' },
-  nb_autres_liens_interets:        { label: 'Autres liens d\'intérêts',     icon: '⚠️' },
-  nb_autres_activites:             { label: 'Autres activités',             icon: '📝' },
-  nb_fonctions_gouvernementales:   { label: 'Fonctions gouvernementales',   icon: '🏛️' },
-  nb_fonctions_consultatives:      { label: 'Fonctions consultatives',      icon: '📋' },
-  nb_participations_exploitant:    { label: 'Participations exploitant',    icon: '🏭' },
+// Labels pour les sections HATVP détaillées (sans emojis, avec icônes Lucide)
+const HATVP_SECTION_CONFIG: Record<string, { label: string; category: 'patrimoine' | 'interets' | 'autre' }> = {
+  nb_biens_immobiliers:            { label: 'Biens immobiliers',            category: 'patrimoine' },
+  nb_parts_sci:                    { label: 'Parts de SCI',                 category: 'patrimoine' },
+  nb_comptes_bancaires:            { label: 'Comptes bancaires',            category: 'patrimoine' },
+  nb_assurances_vie:               { label: 'Assurances vie',               category: 'patrimoine' },
+  nb_valeurs_bourse:               { label: 'Valeurs cotées en bourse',     category: 'patrimoine' },
+  nb_valeurs_non_bourse:           { label: 'Valeurs non cotées',           category: 'patrimoine' },
+  nb_instruments_financiers:       { label: 'Instruments financiers',       category: 'patrimoine' },
+  nb_participations_financieres:   { label: 'Participations financières',   category: 'patrimoine' },
+  nb_fonds:                        { label: 'Fonds',                        category: 'patrimoine' },
+  nb_biens_divers:                 { label: 'Biens divers',                 category: 'patrimoine' },
+  nb_autres_biens:                 { label: 'Autres biens',                 category: 'patrimoine' },
+  nb_biens_etrangers:              { label: 'Biens à l\'étranger',          category: 'patrimoine' },
+  nb_vehicules:                    { label: 'Véhicules',                    category: 'patrimoine' },
+  nb_biens_mobiliers_valeur:       { label: 'Biens mobiliers de valeur',    category: 'patrimoine' },
+  nb_dettes:                       { label: 'Dettes et emprunts',           category: 'patrimoine' },
+  nb_revenus:                      { label: 'Revenus déclarés',             category: 'patrimoine' },
+  nb_evenements_majeurs:           { label: 'Événements patrimoniaux',      category: 'patrimoine' },
+  nb_activites_consultant:         { label: 'Activités de consultant',      category: 'interets' },
+  nb_activites_professionnelles:   { label: 'Activités professionnelles',   category: 'interets' },
+  nb_activites_anterieures:        { label: 'Activités antérieures',        category: 'interets' },
+  nb_mandats_electifs:             { label: 'Mandats électifs',             category: 'interets' },
+  nb_participations_organes:       { label: 'Participations à des organes', category: 'interets' },
+  nb_fonctions_benevoles:          { label: 'Fonctions bénévoles',          category: 'interets' },
+  nb_activites_conjoint:           { label: 'Activités du conjoint',        category: 'interets' },
+  nb_activites_collaborateurs:     { label: 'Activités collaborateurs',     category: 'interets' },
+  nb_autres_liens_interets:        { label: 'Autres liens d\'intérêts',     category: 'interets' },
+  nb_autres_activites:             { label: 'Autres activités',             category: 'interets' },
+  nb_fonctions_gouvernementales:   { label: 'Fonctions gouvernementales',   category: 'interets' },
+  nb_fonctions_consultatives:      { label: 'Fonctions consultatives',      category: 'interets' },
+  nb_participations_exploitant:    { label: 'Participations exploitant',    category: 'interets' },
 };
 
 export default function ProfilPage() {
@@ -73,6 +73,7 @@ export default function ProfilPage() {
   const router = useRouter();
   const [elu, setElu] = useState<Elu | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showDetails, setShowDetails] = useState(false);
 
   useEffect(() => {
     const fetchElu = async () => {
@@ -106,7 +107,7 @@ export default function ProfilPage() {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="text-center py-16">
-          <div className="text-6xl mb-4">😕</div>
+          <User size={64} className="text-gray-300 mx-auto mb-4" />
           <h3 className="text-2xl font-bold text-gray-900 mb-2">
             Élu non trouvé
           </h3>
@@ -157,11 +158,20 @@ export default function ProfilPage() {
         .map(([key, val]) => ({
           key,
           count: val as number,
-          label: HATVP_SECTION_LABELS[key]?.label || key.replace('nb_', '').replace(/_/g, ' '),
-          icon: HATVP_SECTION_LABELS[key]?.icon || '📄',
+          label: HATVP_SECTION_CONFIG[key]?.label || key.replace('nb_', '').replace(/_/g, ' '),
+          category: HATVP_SECTION_CONFIG[key]?.category || 'autre',
           value: elu.hatvp?.[key.replace('nb_', 'valeur_') + '_euro'] as number | undefined,
         }))
     : [];
+
+  // Séparer patrimoine et intérêts pour l'affichage détaillé
+  const patrimoineSections = hatvpSections.filter((s) => s.category === 'patrimoine');
+  const interetsSections = hatvpSections.filter((s) => s.category === 'interets');
+
+  // Calculer des totaux pour l'affichage
+  const totalActifBrut = elu.hatvp?.total_actif_brut_euro || 0;
+  const totalDettes = elu.hatvp?.total_dettes_euro || 0;
+  const patrimoineNet = elu.hatvp?.patrimoine_net_euro || 0;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-12">
@@ -400,7 +410,7 @@ export default function ProfilPage() {
             </motion.div>
           )}
 
-          {/* Détail patrimoine HATVP */}
+          {/* Detail patrimoine HATVP */}
           {hatvpSections.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -408,18 +418,30 @@ export default function ProfilPage() {
               transition={{ duration: 0.4, delay: 0.15 }}
               className="bg-white rounded-xl shadow-lg p-4 sm:p-6"
             >
-              <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <TrendingUp size={20} className="text-blue-600" />
-                Détail des déclarations
-              </h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <TrendingUp size={20} className="text-blue-600" />
+                  Synthèse des déclarations
+                </h3>
+                <button
+                  onClick={() => setShowDetails(!showDetails)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                >
+                  <Info size={14} />
+                  {showDetails ? 'Masquer les détails' : 'Voir les détails'}
+                  {showDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+              </div>
+
+              {/* Vue resumee (toujours visible) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
-                {hatvpSections.map(({ key, count, label, icon, value }) => (
+                {hatvpSections.map(({ key, count, label, value }) => (
                   <div
                     key={key}
                     className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-base flex-shrink-0">{icon}</span>
+                      <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
                       <span className="text-sm text-gray-700 truncate">{label}</span>
                     </div>
                     <div className="text-right flex-shrink-0 ml-2">
@@ -431,6 +453,226 @@ export default function ProfilPage() {
                   </div>
                 ))}
               </div>
+
+              {/* Vue détaillée (expandable) */}
+              {showDetails && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  transition={{ duration: 0.3 }}
+                  className="mt-6 space-y-6"
+                >
+                  {/* Ventilation du patrimoine */}
+                  {patrimoineSections.length > 0 && (
+                    <div>
+                      <h4 className="text-base font-semibold text-gray-800 mb-3 flex items-center gap-2 border-b pb-2">
+                        <Wallet size={16} className="text-blue-600" />
+                        Ventilation du patrimoine
+                      </h4>
+
+                      {/* Totaux patrimoine */}
+                      {(totalActifBrut > 0 || patrimoineNet > 0) && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                          {totalActifBrut > 0 && (
+                            <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                              <p className="text-xs text-blue-600 font-medium">Actif brut total</p>
+                              <p className="text-lg font-bold text-blue-900">{formatMoney(totalActifBrut)}</p>
+                            </div>
+                          )}
+                          {totalDettes > 0 && (
+                            <div className="p-3 bg-red-50 rounded-lg border border-red-100">
+                              <p className="text-xs text-red-600 font-medium">Dettes et emprunts</p>
+                              <p className="text-lg font-bold text-red-900">-{formatMoney(totalDettes)}</p>
+                            </div>
+                          )}
+                          {patrimoineNet > 0 && (
+                            <div className="p-3 bg-green-50 rounded-lg border border-green-100">
+                              <p className="text-xs text-green-600 font-medium">Patrimoine net</p>
+                              <p className="text-lg font-bold text-green-900">{formatMoney(patrimoineNet)}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Immobilier */}
+                      {patrimoineSections.filter(s => s.key === 'nb_biens_immobiliers' || s.key === 'nb_parts_sci' || s.key === 'nb_biens_etrangers').length > 0 && (
+                        <div className="mb-4">
+                          <h5 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                            <Home size={14} className="text-blue-500" />
+                            Immobilier et foncier
+                          </h5>
+                          <div className="space-y-2">
+                            {patrimoineSections
+                              .filter(s => ['nb_biens_immobiliers', 'nb_parts_sci', 'nb_biens_etrangers'].includes(s.key))
+                              .map(({ key, count, label, value }) => (
+                                <div key={key} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg text-sm">
+                                  <span className="text-gray-700">{label}</span>
+                                  <div className="text-right">
+                                    <span className="font-semibold text-gray-900">{count} élément{count > 1 ? 's' : ''}</span>
+                                    {value != null && value > 0 && (
+                                      <span className="ml-2 text-xs text-gray-500">({formatMoney(value)})</span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Placements et investissements */}
+                      {patrimoineSections.filter(s =>
+                        ['nb_comptes_bancaires', 'nb_assurances_vie', 'nb_valeurs_bourse',
+                         'nb_valeurs_non_bourse', 'nb_instruments_financiers',
+                         'nb_participations_financieres', 'nb_fonds'].includes(s.key)
+                      ).length > 0 && (
+                        <div className="mb-4">
+                          <h5 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                            <BarChart3 size={14} className="text-green-500" />
+                            Placements et investissements
+                          </h5>
+                          <div className="space-y-2">
+                            {patrimoineSections
+                              .filter(s =>
+                                ['nb_comptes_bancaires', 'nb_assurances_vie', 'nb_valeurs_bourse',
+                                 'nb_valeurs_non_bourse', 'nb_instruments_financiers',
+                                 'nb_participations_financieres', 'nb_fonds'].includes(s.key)
+                              )
+                              .map(({ key, count, label, value }) => (
+                                <div key={key} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg text-sm">
+                                  <span className="text-gray-700">{label}</span>
+                                  <div className="text-right">
+                                    <span className="font-semibold text-gray-900">{count} élément{count > 1 ? 's' : ''}</span>
+                                    {value != null && value > 0 && (
+                                      <span className="ml-2 text-xs text-gray-500">({formatMoney(value)})</span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            {placementsMontant > 0 && (
+                              <div className="flex items-center justify-between p-2.5 bg-green-50 rounded-lg text-sm border border-green-100">
+                                <span className="text-green-700 font-medium">Total placements</span>
+                                <span className="font-bold text-green-900">{formatMoney(placementsMontant)}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Autres biens */}
+                      {patrimoineSections.filter(s =>
+                        ['nb_biens_divers', 'nb_autres_biens', 'nb_vehicules',
+                         'nb_biens_mobiliers_valeur'].includes(s.key)
+                      ).length > 0 && (
+                        <div className="mb-4">
+                          <h5 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                            <Package size={14} className="text-orange-500" />
+                            Autres biens
+                          </h5>
+                          <div className="space-y-2">
+                            {patrimoineSections
+                              .filter(s =>
+                                ['nb_biens_divers', 'nb_autres_biens', 'nb_vehicules',
+                                 'nb_biens_mobiliers_valeur'].includes(s.key)
+                              )
+                              .map(({ key, count, label, value }) => (
+                                <div key={key} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg text-sm">
+                                  <span className="text-gray-700">{label}</span>
+                                  <div className="text-right">
+                                    <span className="font-semibold text-gray-900">{count} élément{count > 1 ? 's' : ''}</span>
+                                    {value != null && value > 0 && (
+                                      <span className="ml-2 text-xs text-gray-500">({formatMoney(value)})</span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Dettes */}
+                      {patrimoineSections.filter(s => s.key === 'nb_dettes').length > 0 && (
+                        <div className="mb-4">
+                          <h5 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                            <AlertTriangle size={14} className="text-red-500" />
+                            Passif
+                          </h5>
+                          <div className="space-y-2">
+                            {patrimoineSections
+                              .filter(s => s.key === 'nb_dettes')
+                              .map(({ key, count, label, value }) => (
+                                <div key={key} className="flex items-center justify-between p-2.5 bg-red-50 rounded-lg text-sm border border-red-100">
+                                  <span className="text-red-700">{label}</span>
+                                  <div className="text-right">
+                                    <span className="font-semibold text-red-900">{count} élément{count > 1 ? 's' : ''}</span>
+                                    {value != null && value > 0 && (
+                                      <span className="ml-2 text-xs text-red-600">({formatMoney(value)})</span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Revenus déclarés */}
+                      {patrimoineSections.filter(s => s.key === 'nb_revenus').length > 0 && (
+                        <div className="mb-4">
+                          <h5 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                            <Receipt size={14} className="text-green-500" />
+                            Revenus déclarés
+                          </h5>
+                          <div className="space-y-2">
+                            {patrimoineSections
+                              .filter(s => s.key === 'nb_revenus')
+                              .map(({ key, count, label, value }) => (
+                                <div key={key} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg text-sm">
+                                  <span className="text-gray-700">{label}</span>
+                                  <div className="text-right">
+                                    <span className="font-semibold text-gray-900">{count} source{count > 1 ? 's' : ''}</span>
+                                    {value != null && value > 0 && (
+                                      <span className="ml-2 text-xs text-gray-500">({formatMoney(value)})</span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Declarations d'interets */}
+                  {interetsSections.length > 0 && (
+                    <div>
+                      <h4 className="text-base font-semibold text-gray-800 mb-3 flex items-center gap-2 border-b pb-2">
+                        <Briefcase size={16} className="text-blue-600" />
+                        Intérêts et activités déclarés
+                      </h4>
+                      <div className="space-y-2">
+                        {interetsSections.map(({ key, count, label }) => (
+                          <div key={key} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg text-sm">
+                            <span className="text-gray-700">{label}</span>
+                            <span className="font-semibold text-gray-900">{count} élément{count > 1 ? 's' : ''}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Note source */}
+                  <div className="text-xs text-gray-400 pt-2 border-t">
+                    Données agrégées à partir des déclarations HATVP disponibles pour cet élu.
+                    {elu.liens.hatvp && (
+                      <>
+                        {' '}Pour consulter le détail complet :{' '}
+                        <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline text-blue-500">
+                          fiche HATVP
+                        </a>
+                      </>
+                    )}
+                  </div>
+                </motion.div>
+              )}
             </motion.div>
           )}
 

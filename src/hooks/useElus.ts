@@ -6,19 +6,33 @@ export const useElus = create<ElusStore>((set, get) => ({
   loading: true,
   searchTerm: '',
   sortBy: 'nom',
+  mandatFilter: '',
+  showPhotos: false,
 
   setSearchTerm: (term: string) => set({ searchTerm: term }),
   
   setSortBy: (sort) => set({ sortBy: sort }),
 
+  setMandatFilter: (filter) => set({ mandatFilter: filter }),
+
+  setShowPhotos: (show) => set({ showPhotos: show }),
+
   getFiltered: () => {
-    const { elus, searchTerm, sortBy } = get();
+    const { elus, searchTerm, sortBy, mandatFilter } = get();
     
     // Filtrage
     let filtered = elus;
+
+    // Filtre par type de mandat
+    if (mandatFilter) {
+      filtered = filtered.filter(
+        (elu) => elu.types_mandat && elu.types_mandat.includes(mandatFilter)
+      );
+    }
+
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = elus.filter(
+      filtered = filtered.filter(
         (elu) =>
           elu.nom.toLowerCase().includes(term) ||
           elu.prenom.toLowerCase().includes(term) ||
