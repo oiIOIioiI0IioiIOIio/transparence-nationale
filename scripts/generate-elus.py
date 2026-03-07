@@ -1851,6 +1851,7 @@ def main():
                 if resume.get("total_revenus_euro", 0) > 0:
                     e["revenus"] = resume["total_revenus_euro"]
                 elif e.get("revenus", 0) == 85296:
+                    # 85296 = fake default revenue (≈ député brut annuel) from initial data
                     e["revenus"] = 0
                 pat_net = resume.get("patrimoine_net_euro", 0)
                 if pat_net:

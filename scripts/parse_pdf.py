@@ -218,7 +218,7 @@ def extract_text_from_pdf(pdf_path: str, use_ocr: bool = True) -> str:
     has_meaningful_content = (
         len(text_stripped) >= MIN_TEXT_LENGTH
         and (
-            re.search(r"(?i)(?:patrimoin|immobilier|revenus?|emprunt|dettes?|r[ée]mun[ée]ration|employeur|activit)", text_stripped)
+            re.search(r"(?i)(?:patrimoin|immobilier|revenus?|emprunt|dettes?|r[ée]mun[ée]ration|employeur|activit[ée])", text_stripped)
             or re.search(r"\d[\d\s]*[.,]\d{1,2}\s*(?:€|euros?)", text_stripped)
         )
     )

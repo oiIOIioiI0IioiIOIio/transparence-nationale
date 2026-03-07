@@ -132,7 +132,7 @@ const MONEY_FIELDS = new Set(['valeur', 'solde', 'montant', 'remuneration']);
 
 function DetailItemRenderer({ item, formatMoney }: { item: Record<string, unknown>; formatMoney: (v: number) => string }) {
   // Find the primary label (denomination, description, mandat, or first string field)
-  const primaryKey = ['denomination', 'description', 'mandat', 'marque', 'etablissement', 'organisme', 'type'].find(k => item[k]);
+  const primaryKey = ['denomination', 'description', 'mandat', 'marque', 'etablissement', 'organisme', 'type'].find(k => item[k] != null && item[k] !== '');
   const primaryValue = primaryKey ? String(item[primaryKey]) : null;
 
   // Collect other fields
