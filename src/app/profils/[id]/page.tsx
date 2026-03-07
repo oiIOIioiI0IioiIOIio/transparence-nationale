@@ -172,6 +172,39 @@ function deduplicateDetails(items: Record<string, unknown>[]): Record<string, un
   return Array.from(seen.values());
 }
 
+/**
+ * Categorize mandats into current and past.
+ * A mandat is considered "past" if the HATVP details_mandats indicate it has ended (date_fin).
+ */
+function categorizeMandats(
+  mandats: string[],
+  fonction: string,
+  detailMandats?: { mandat?: string; organisme?: string; date_fin?: string }[]
+): { current: string[]; past: string[] } {
+  const uniqueMandats = [...new Set(mandats)];
+  const currentFonction = (fonction || '').toLowerCase().trim();
+
+  const pastMandatLabels = new Set<string>();
+  if (detailMandats) {
+    for (const dm of detailMandats) {
+      if (dm.date_fin && dm.date_fin.trim()) {
+        const label = (dm.mandat || dm.organisme || '').toLowerCase().trim();
+        if (label) pastMandatLabels.add(label);
+      }
+    }
+  }
+
+  const current = uniqueMandats.filter(m => {
+    const ml = m.toLowerCase().trim();
+    if (ml === currentFonction || currentFonction.includes(ml) || ml.includes(currentFonction)) return true;
+    return !pastMandatLabels.has(ml);
+  });
+
+  const past = uniqueMandats.filter(m => !current.includes(m));
+
+  return { current, past };
+}
+
 function DetailItemRenderer({ item, formatMoney }: { item: Record<string, unknown>; formatMoney: (v: number) => string }) {
   // Find the primary label (denomination, description, mandat, or first string field)
   const primaryKey = ['denomination', 'description', 'mandat', 'marque', 'etablissement', 'organisme', 'type'].find(k => item[k] != null && item[k] !== '');
@@ -328,6 +361,16 @@ export default function ProfilPage() {
   const totalActifBrut = elu.hatvp?.total_actif_brut_euro || 0;
   const totalDettes = elu.hatvp?.total_dettes_euro || 0;
   const patrimoineNet = elu.hatvp?.patrimoine_net_euro || 0;
+
+  // Sections that have expandable details
+  const expandableSectionKeys = hatvpSections
+    .filter(({ key }) => {
+      const dk = NB_TO_DETAILS_KEY[key];
+      const d = dk ? (elu.hatvp?.[dk] as Record<string, unknown>[] | undefined) : undefined;
+      return d && d.length > 0;
+    })
+    .map(({ key }) => key);
+  const allSectionsExpanded = expandableSectionKeys.length > 0 && expandableSectionKeys.every(k => expandedSections.has(k));
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-12">
@@ -581,45 +624,17 @@ export default function ProfilPage() {
                 </h3>
                 <button
                   onClick={() => {
-                    const sectionsWithDetails = hatvpSections
-                      .filter(({ key }) => {
-                        const dk = NB_TO_DETAILS_KEY[key];
-                        const d = dk ? (elu.hatvp?.[dk] as Record<string, unknown>[] | undefined) : undefined;
-                        return d && d.length > 0;
-                      })
-                      .map(({ key }) => key);
-                    const allExpanded = sectionsWithDetails.every(k => expandedSections.has(k));
-                    if (allExpanded) {
+                    if (allSectionsExpanded) {
                       setExpandedSections(new Set());
                     } else {
-                      setExpandedSections(new Set(sectionsWithDetails));
+                      setExpandedSections(new Set(expandableSectionKeys));
                     }
                   }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-500 bg-red-900/30 rounded-lg hover:bg-red-900/50 transition-colors"
                 >
                   <Info size={14} />
-                  {(() => {
-                    const sectionsWithDetails = hatvpSections
-                      .filter(({ key }) => {
-                        const dk = NB_TO_DETAILS_KEY[key];
-                        const d = dk ? (elu.hatvp?.[dk] as Record<string, unknown>[] | undefined) : undefined;
-                        return d && d.length > 0;
-                      })
-                      .map(({ key }) => key);
-                    const allExpanded = sectionsWithDetails.length > 0 && sectionsWithDetails.every(k => expandedSections.has(k));
-                    return allExpanded ? t('profil.details.hide', lang) : t('profil.details.show', lang);
-                  })()}
-                  {(() => {
-                    const sectionsWithDetails = hatvpSections
-                      .filter(({ key }) => {
-                        const dk = NB_TO_DETAILS_KEY[key];
-                        const d = dk ? (elu.hatvp?.[dk] as Record<string, unknown>[] | undefined) : undefined;
-                        return d && d.length > 0;
-                      })
-                      .map(({ key }) => key);
-                    const allExpanded = sectionsWithDetails.length > 0 && sectionsWithDetails.every(k => expandedSections.has(k));
-                    return allExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
-                  })()}
+                  {allSectionsExpanded ? t('profil.details.hide', lang) : t('profil.details.show', lang)}
+                  {allSectionsExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                 </button>
               </div>
 
@@ -739,37 +754,16 @@ export default function ProfilPage() {
                 {t('profil.mandats', lang)}
               </h3>
 
-              {/* Determine current vs past mandats */}
+              {/* Current vs past mandats */}
               {(() => {
-                const currentFonction = (elu.fonction || '').toLowerCase().trim();
-                const detailMandats = elu.hatvp?.details_mandats as { mandat?: string; organisme?: string; remuneration?: number; date_fin?: string }[] | undefined;
-
-                // Deduplicate mandats strings
-                const uniqueMandats = [...new Set(elu.mandats)];
-
-                // Categorize: a mandat is "current" if it matches the current fonction or doesn't have a past-indicating detail
-                const pastMandatLabels = new Set<string>();
-                if (detailMandats) {
-                  for (const dm of detailMandats) {
-                    if (dm.date_fin && dm.date_fin.trim()) {
-                      const label = (dm.mandat || dm.organisme || '').toLowerCase().trim();
-                      if (label) pastMandatLabels.add(label);
-                    }
-                  }
-                }
-
-                const currentMandats = uniqueMandats.filter(m => {
-                  const ml = m.toLowerCase().trim();
-                  // Current if: matches current fonction, or not flagged as past
-                  if (ml === currentFonction || currentFonction.includes(ml) || ml.includes(currentFonction)) return true;
-                  return !pastMandatLabels.has(ml);
-                });
-
-                const pastMandats = uniqueMandats.filter(m => !currentMandats.includes(m));
+                const { current: currentMandats, past: pastMandats } = categorizeMandats(
+                  elu.mandats,
+                  elu.fonction,
+                  elu.hatvp?.details_mandats as { mandat?: string; organisme?: string; date_fin?: string }[] | undefined
+                );
 
                 return (
                   <>
-                    {/* Current mandats */}
                     {currentMandats.length > 0 && (
                       <div className="mb-4">
                         <h4 className="text-sm font-semibold text-green-400 mb-2">Actuels</h4>
@@ -787,7 +781,6 @@ export default function ProfilPage() {
                       </div>
                     )}
 
-                    {/* Past mandats */}
                     {pastMandats.length > 0 && (
                       <div>
                         <button
