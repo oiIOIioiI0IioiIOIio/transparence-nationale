@@ -1,11 +1,11 @@
 {
-  "merged_at": "2026-03-07T13:31:06.694561+00:00",
+  "merged_at": "2026-03-07T20:43:44.391373+00:00",
   "total_pdfs": 1,
   "declarations": [
     {
       "source": "pdf",
       "pdf_path": "public/attal-gabriel-dia30320-depute-92.pdf",
-      "parsed_at": "2026-03-07T13:31:06.355884+00:00",
+      "parsed_at": "2026-03-07T20:43:44.034661+00:00",
       "extraction_method": "pdfplumber",
       "raw_text_length": 4402,
       "sections_found": [
@@ -32,6 +32,33 @@
             600.0,
             600.0,
             600.0
+          ],
+          "periode": "01/2019 à 09/2024",
+          "revenus_annuels": [
+            {
+              "annee": "2019",
+              "montant": 600.0
+            },
+            {
+              "annee": "2020",
+              "montant": 600.0
+            },
+            {
+              "annee": "2021",
+              "montant": 600.0
+            },
+            {
+              "annee": "2022",
+              "montant": 600.0
+            },
+            {
+              "annee": "2023",
+              "montant": 600.0
+            },
+            {
+              "annee": "2024",
+              "montant": 600.0
+            }
           ]
         }
       ],
