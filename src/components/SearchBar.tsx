@@ -1,6 +1,6 @@
 'use client';
 
-import { Search, ImageOff, Image as ImageIcon } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { useElus } from '@/hooks/useElus';
 import { SortBy, MandatFilter } from '@/lib/types';
 import { useLang, t } from '@/lib/i18n';
@@ -21,7 +21,7 @@ const MANDAT_KEYS: { value: MandatFilter; i18nKey: string }[] = [
 ];
 
 export default function SearchBar() {
-  const { searchTerm, setSearchTerm, sortBy, setSortBy, mandatFilter, setMandatFilter, showPhotos, setShowPhotos } = useElus();
+  const { searchTerm, setSearchTerm, sortBy, setSortBy, mandatFilter, setMandatFilter } = useElus();
   const { lang } = useLang();
 
   return (
@@ -50,7 +50,7 @@ export default function SearchBar() {
         </select>
       </div>
 
-      {/* Ligne secondaire : filtre mandat + toggle photos */}
+      {/* Ligne secondaire : filtre mandat */}
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
         <select
           value={mandatFilter}
@@ -63,18 +63,6 @@ export default function SearchBar() {
             </option>
           ))}
         </select>
-
-        <button
-          onClick={() => setShowPhotos(!showPhotos)}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 text-sm font-medium transition-colors ${
-            showPhotos
-              ? 'border-red-500 bg-red-900/40 text-red-300'
-              : 'border-neutral-600 bg-neutral-800 text-neutral-400 hover:border-neutral-500'
-          }`}
-        >
-          {showPhotos ? <ImageIcon size={16} /> : <ImageOff size={16} />}
-          {showPhotos ? t('search.photos.on', lang) : t('search.photos.off', lang)}
-        </button>
       </div>
     </div>
   );
