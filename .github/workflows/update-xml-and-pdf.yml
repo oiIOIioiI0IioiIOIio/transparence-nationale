@@ -1,0 +1,131 @@
+name: 🔄 Mise à jour XML & OCR PDF
+
+on:
+  workflow_dispatch:
+    inputs:
+      refresh_xml:
+        description: "Forcer le re-téléchargement du XML HATVP"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      process_pdfs:
+        description: "Traiter les PDFs via OCR"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      limit:
+        description: "Nombre d'élus à traiter (vide = tous)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  update-xml-and-pdf:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('scripts/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Installer les dépendances Python
+        run: pip install -r scripts/requirements.txt
+
+      - name: Installer Tesseract OCR (si PDFs activé)
+        if: github.event.inputs.process_pdfs == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tesseract-ocr tesseract-ocr-fra poppler-utils
+
+      - name: Mise à jour depuis le XML global
+        run: |
+          FLAGS=""
+          if [ "${{ github.event.inputs.refresh_xml }}" == "true" ]; then
+            FLAGS="$FLAGS --refresh-xml"
+          fi
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            FLAGS="$FLAGS --limit ${{ github.event.inputs.limit }}"
+          fi
+          python scripts/generate-elus.py $FLAGS
+
+      - name: Enrichir les métadonnées depuis le CSV
+        run: python scripts/generate-elus.py --enrich-csv-only
+
+      - name: Traiter les PDFs via OCR
+        if: github.event.inputs.process_pdfs == 'true'
+        run: |
+          FLAGS="--batch"
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            FLAGS="$FLAGS --limit ${{ github.event.inputs.limit }}"
+          fi
+          python scripts/parse_pdf.py $FLAGS
+
+      - name: Traiter les PDFs locaux (public/*.pdf)
+        if: github.event.inputs.process_pdfs == 'true'
+        run: |
+          for pdf in public/*.pdf; do
+            [ -f "$pdf" ] || continue
+            echo "📄 Traitement : $pdf"
+            python scripts/parse_pdf.py --process-local "$pdf"
+          done
+
+      - name: Merger les données PDF dans elus.json
+        if: github.event.inputs.process_pdfs == 'true'
+        run: python scripts/parse_pdf.py --merge-to-main
+
+      - name: Vérifier les changements
+        id: check_changes
+        run: |
+          if git diff --quiet public/data/elus.json public/data/pdf_declarations/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            COUNT=$(python3 -c "import json; d=json.load(open('public/data/elus.json')); print(len(d))")
+            echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit et push
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          DATE=$(date -u +"%Y-%m-%d")
+          COUNT=${{ steps.check_changes.outputs.count }}
+          git add public/data/elus.json public/data/pdf_declarations/
+          git commit -m "🔄 Mise à jour XML & PDF — ${DATE} (${COUNT} élus)"
+          git push
+
+      - name: Résumé
+        run: |
+          if [ "${{ steps.check_changes.outputs.changed }}" == "true" ]; then
+            echo "## ✅ Données mises à jour" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Élus** : ${{ steps.check_changes.outputs.count }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Date** : $(date -u +"%Y-%m-%d %H:%M UTC")" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **XML rafraîchi** : ${{ github.event.inputs.refresh_xml }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **PDFs traités** : ${{ github.event.inputs.process_pdfs }}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## ℹ️ Aucun changement détecté" >> "$GITHUB_STEP_SUMMARY"
+          fi

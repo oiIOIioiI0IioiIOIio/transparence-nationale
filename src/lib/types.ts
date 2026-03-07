@@ -57,10 +57,29 @@ export interface Elu {
     valeur_dettes_euro?: number;
     valeur_revenus_euro?: number;
     // Detailed extracted data (company names, salaries, etc.)
-    details_activites?: { denomination?: string; remuneration?: string; fonction?: string }[];
-    details_mandats?: { mandat?: string; organisme?: string; remuneration?: string }[];
-    details_participations?: { denomination?: string; type?: string; valeur?: string }[];
-    details_revenus?: { type?: string; organisme?: string; montant?: string }[];
+    details_activites?: { denomination?: string; remuneration?: number; fonction?: string }[];
+    details_mandats?: { mandat?: string; organisme?: string; remuneration?: number }[];
+    details_participations?: { denomination?: string; type?: string; valeur?: number }[];
+    details_revenus?: { type?: string; organisme?: string; montant?: number }[];
+    details_biens_immobiliers?: { description?: string; nature?: string; lieu?: string; surface?: string; mode_acquisition?: string; date_acquisition?: string; valeur?: number }[];
+    details_comptes_bancaires?: { etablissement?: string; type_compte?: string; description?: string; solde?: number }[];
+    details_valeurs_bourse?: { denomination?: string; nature?: string; nombre?: string; valeur?: number }[];
+    details_valeurs_non_bourse?: { denomination?: string; nature?: string; nombre?: string; valeur?: number }[];
+    details_assurances_vie?: { organisme?: string; description?: string; valeur?: number }[];
+    details_fonds?: { denomination?: string; gestionnaire?: string; valeur?: number }[];
+    details_instruments_financiers?: { denomination?: string; nature?: string; valeur?: number }[];
+    details_dettes?: { organisme?: string; description?: string; date_emprunt?: string; montant?: number }[];
+    details_vehicules?: { marque?: string; modele?: string; annee?: string; mode_acquisition?: string; valeur?: number }[];
+    details_parts_sci?: { denomination?: string; nombre_parts?: string; valeur?: number }[];
+    details_biens_divers?: { description?: string; valeur?: number }[];
+    details_activites_conjoint?: { denomination?: string; fonction?: string; remuneration?: number }[];
+    details_fonctions_benevoles?: { denomination?: string; fonction?: string }[];
+    details_activites_anterieures?: { denomination?: string; fonction?: string; date_debut?: string; date_fin?: string; remuneration?: number }[];
+    details_activites_consultant?: { denomination?: string; fonction?: string; remuneration?: number }[];
+    details_autres_liens_interets?: { description?: string; organisme?: string }[];
+    declarations_detail?: { type?: string; label?: string; date_depot?: string; qualite?: string; organe?: string }[];
+    // PDF OCR data
+    pdf_declarations?: { source_pdf?: string; parsed_at?: string; extraction_method?: string; [key: string]: unknown }[];
     [key: string]: unknown;
   };
   groupe?: string;

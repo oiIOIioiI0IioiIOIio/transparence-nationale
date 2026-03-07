@@ -937,19 +937,23 @@ def build_resume_hatvp(data: dict) -> dict:
     if total_revenus:
         resume["total_revenus_euro"] = total_revenus
 
-    # Detailed item lists
+    # ── Detailed item lists ──────────────────────────────────────────────────
+
+    # Activités professionnelles
     activites = data.get("activites_professionnelles", [])
     if activites:
         details = _extract_details_activites(activites)
         if details:
             resume["details_activites"] = details
 
+    # Mandats électifs
     mandats = data.get("mandats_electifs", [])
     if mandats:
         details = _extract_details_mandats(mandats)
         if details:
             resume["details_mandats"] = details
 
+    # Participations (financières + organes dirigeants)
     participations = (
         data.get("participations_financieres", [])
         + data.get("participations_organes", [])
@@ -959,11 +963,276 @@ def build_resume_hatvp(data: dict) -> dict:
         if details:
             resume["details_participations"] = details
 
+    # Revenus
     revenus = data.get("revenus", [])
     if revenus:
         details = _extract_details_revenus(revenus)
         if details:
             resume["details_revenus"] = details
+
+    # ── NEW: biens immobiliers ────────────────────────────────────────────
+    biens_immo = data.get("biens_immobiliers", [])
+    if biens_immo:
+        details = []
+        for item in biens_immo[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "description": item.get("description") or item.get("description_label") or "",
+                "nature": item.get("nature") or item.get("nature_label") or item.get("typeBien") or item.get("typeBien_label") or "",
+                "lieu": item.get("lieu") or item.get("localisation") or item.get("commune") or item.get("commune_label") or item.get("adresse") or "",
+                "surface": item.get("surface") or item.get("surfaceBien") or "",
+                "mode_acquisition": item.get("modeAcquisition") or item.get("modeAcquisition_label") or item.get("modeDetention") or item.get("modeDetention_label") or "",
+                "date_acquisition": item.get("dateAcquisition") or item.get("anneeAcquisition") or "",
+                "valeur": _first_financial(item),
+            })
+            if d:
+                details.append(d)
+        if details:
+            resume["details_biens_immobiliers"] = details
+
+    # ── NEW: comptes bancaires ────────────────────────────────────────────
+    comptes = data.get("comptes_bancaires", [])
+    if comptes:
+        details = []
+        for item in comptes[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "etablissement": item.get("etablissement") or item.get("banque") or item.get("nomEtablissement") or item.get("organisme") or "",
+                "type_compte": item.get("nature") or item.get("nature_label") or item.get("typeCompte") or item.get("typeCompte_label") or "",
+                "description": item.get("description") or "",
+                "solde": _first_financial(item),
+            })
+            if d:
+                details.append(d)
+        if details:
+            resume["details_comptes_bancaires"] = details
+
+    # ── NEW: valeurs en bourse (actions cotées) ───────────────────────────
+    bourse = data.get("valeurs_bourse", [])
+    if bourse:
+        details = []
+        for item in bourse[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "denomination": item.get("denomination") or item.get("denomination_label") or item.get("description") or "",
+                "nature": item.get("nature") or item.get("nature_label") or "",
+                "nombre": item.get("nombre") or item.get("nombreParts") or "",
+                "valeur": _first_financial(item),
+            })
+            if d:
+                details.append(d)
+        if details:
+            resume["details_valeurs_bourse"] = details
+
+    # ── NEW: valeurs non cotées ───────────────────────────────────────────
+    non_bourse = data.get("valeurs_non_bourse", [])
+    if non_bourse:
+        details = []
+        for item in non_bourse[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "denomination": item.get("denomination") or item.get("denomination_label") or item.get("description") or "",
+                "nature": item.get("nature") or item.get("nature_label") or "",
+                "nombre": item.get("nombre") or item.get("nombreParts") or "",
+                "valeur": _first_financial(item),
+            })
+            if d:
+                details.append(d)
+        if details:
+            resume["details_valeurs_non_bourse"] = details
+
+    # ── NEW: assurances vie ───────────────────────────────────────────────
+    assurances = data.get("assurances_vie", [])
+    if assurances:
+        details = []
+        for item in assurances[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "organisme": item.get("organisme") or item.get("organisme_label") or item.get("assureur") or item.get("denomination") or "",
+                "description": item.get("description") or item.get("nature") or item.get("nature_label") or "",
+                "valeur": _first_financial(item),
+            })
+            if d:
+                details.append(d)
+        if details:
+            resume["details_assurances_vie"] = details
+
+    # ── NEW: fonds ────────────────────────────────────────────────────────
+    fonds = data.get("fonds", [])
+    if fonds:
+        details = []
+        for item in fonds[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "denomination": item.get("denomination") or item.get("denomination_label") or item.get("description") or "",
+                "gestionnaire": item.get("gestionnaire") or item.get("organisme") or "",
+                "valeur": _first_financial(item),
+            })
+            if d:
+                details.append(d)
+        if details:
+            resume["details_fonds"] = details
+
+    # ── NEW: instruments financiers ───────────────────────────────────────
+    instruments = data.get("instruments_financiers", [])
+    if instruments:
+        details = []
+        for item in instruments[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "denomination": item.get("denomination") or item.get("denomination_label") or item.get("description") or "",
+                "nature": item.get("nature") or item.get("nature_label") or "",
+                "valeur": _first_financial(item),
+            })
+            if d:
+                details.append(d)
+        if details:
+            resume["details_instruments_financiers"] = details
+
+    # ── NEW: dettes & emprunts ────────────────────────────────────────────
+    dettes = data.get("dettes", [])
+    if dettes:
+        details = []
+        for item in dettes[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "organisme": item.get("organisme") or item.get("organisme_label") or item.get("etablissement") or item.get("preteur") or "",
+                "description": item.get("description") or item.get("objet") or item.get("nature") or item.get("nature_label") or "",
+                "date_emprunt": item.get("dateEmprunt") or item.get("dateContractation") or "",
+                "montant": _first_financial(item),
+            })
+            if d:
+                details.append(d)
+        if details:
+            resume["details_dettes"] = details
+
+    # ── NEW: véhicules ────────────────────────────────────────────────────
+    vehicules = data.get("vehicules", [])
+    if vehicules:
+        details = []
+        for item in vehicules[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "marque": item.get("marque") or item.get("marque_label") or "",
+                "modele": item.get("modele") or item.get("designation") or item.get("description") or "",
+                "annee": item.get("annee") or item.get("anneeMiseEnCirculation") or "",
+                "mode_acquisition": item.get("modeAcquisition") or item.get("modeAcquisition_label") or "",
+                "valeur": _first_financial(item),
+            })
+            if d:
+                details.append(d)
+        if details:
+            resume["details_vehicules"] = details
+
+    # ── NEW: parts de SCI ─────────────────────────────────────────────────
+    sci = data.get("parts_sci", [])
+    if sci:
+        details = []
+        for item in sci[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "denomination": item.get("denomination") or item.get("denomination_label") or item.get("designation") or "",
+                "nombre_parts": item.get("nombreParts") or item.get("nombre") or "",
+                "valeur": _first_financial(item),
+            })
+            if d:
+                details.append(d)
+        if details:
+            resume["details_parts_sci"] = details
+
+    # ── NEW: biens divers ─────────────────────────────────────────────────
+    divers = data.get("biens_divers", [])
+    if divers:
+        details = []
+        for item in divers[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "description": item.get("description") or item.get("nature") or item.get("nature_label") or "",
+                "valeur": _first_financial(item),
+            })
+            if d:
+                details.append(d)
+        if details:
+            resume["details_biens_divers"] = details
+
+    # ── NEW: activités du/de la conjoint·e ────────────────────────────────
+    conjoint = data.get("activites_conjoint", [])
+    if conjoint:
+        details = []
+        for item in conjoint[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "denomination": item.get("denomination") or item.get("denomination_label") or item.get("employeur") or "",
+                "fonction": item.get("fonction") or item.get("fonction_label") or item.get("activite") or item.get("activite_label") or "",
+                "remuneration": _first_financial(item),
+            })
+            if d:
+                details.append(d)
+        if details:
+            resume["details_activites_conjoint"] = details
+
+    # ── NEW: fonctions bénévoles ──────────────────────────────────────────
+    benevoles = data.get("fonctions_benevoles", [])
+    if benevoles:
+        details = []
+        for item in benevoles[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "denomination": item.get("denomination") or item.get("denomination_label") or item.get("organisme") or "",
+                "fonction": item.get("fonction") or item.get("fonction_label") or item.get("activite") or "",
+            })
+            if d:
+                details.append(d)
+        if details:
+            resume["details_fonctions_benevoles"] = details
+
+    # ── NEW: activités antérieures ────────────────────────────────────────
+    anterieures = data.get("activites_anterieures", [])
+    if anterieures:
+        details = []
+        for item in anterieures[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "denomination": item.get("denomination") or item.get("denomination_label") or item.get("employeur") or "",
+                "fonction": item.get("fonction") or item.get("fonction_label") or item.get("activite") or item.get("activite_label") or "",
+                "date_debut": item.get("dateDebut") or "",
+                "date_fin": item.get("dateFin") or "",
+                "remuneration": _first_financial(item),
+            })
+            if d:
+                details.append(d)
+        if details:
+            resume["details_activites_anterieures"] = details
+
+    # ── NEW: activités de consultant ──────────────────────────────────────
+    consultant = data.get("activites_consultant", [])
+    if consultant:
+        details = []
+        for item in consultant[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "denomination": item.get("denomination") or item.get("denomination_label") or item.get("employeur") or "",
+                "fonction": item.get("fonction") or item.get("fonction_label") or "",
+                "remuneration": _first_financial(item),
+            })
+            if d:
+                details.append(d)
+        if details:
+            resume["details_activites_consultant"] = details
+
+    # ── NEW: autres liens d'intérêts ──────────────────────────────────────
+    autres_liens = data.get("autres_liens_interets", [])
+    if autres_liens:
+        details = []
+        for item in autres_liens[:MAX_DETAIL_ITEMS]:
+            d = _compact({
+                "description": item.get("description") or item.get("nature") or item.get("nature_label") or item.get("denomination") or "",
+                "organisme": item.get("organisme") or item.get("organisme_label") or "",
+            })
+            if d:
+                details.append(d)
+        if details:
+            resume["details_autres_liens_interets"] = details
+
+    # ── NEW: déclarations (metadata per declaration) ──────────────────────
+    decls = data.get("declarations", [])
+    if decls:
+        resume["declarations_detail"] = [
+            _compact({
+                "type": d.get("type", ""),
+                "label": d.get("label", ""),
+                "date_depot": d.get("date_depot", ""),
+                "qualite": d.get("qualite", ""),
+                "organe": d.get("organe", ""),
+            })
+            for d in decls[:10]
+            if d and not d.get("dry_run")
+        ]
 
     return resume
 

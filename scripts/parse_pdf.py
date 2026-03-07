@@ -47,6 +47,8 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 OUTPUT_JSON = os.path.join(PROJECT_ROOT, "public", "data", "elus.json")
 CACHE_DIR = os.path.join(PROJECT_ROOT, "public", "data", "hatvp_cache")
 PDF_CACHE_DIR = os.path.join(CACHE_DIR, "pdfs")
+PDF_DECLARATIONS_DIR = os.path.join(PROJECT_ROOT, "public", "data", "pdf_declarations")
+PDF_MERGED_JSON = os.path.join(PDF_DECLARATIONS_DIR, "pdf_merged.json")
 INDEX_CACHE = os.path.join(CACHE_DIR, "liste.csv")
 
 # ── HATVP URLs ─────────────────────────────────────────────────────────────────
@@ -92,6 +94,10 @@ def parse_args():
                    help="Disable OCR fallback (faster but may miss scanned PDFs)")
     p.add_argument("--refresh-index", action="store_true",
                    help="Force re-download of the CSV index")
+    p.add_argument("--process-local", type=str, default=None,
+                   help="Process a local PDF, save result to public/data/pdf_declarations/")
+    p.add_argument("--merge-to-main", action="store_true",
+                   help="Merge all PDFs in pdf_declarations/ into elus.json")
     return p.parse_args()
 
 
@@ -842,6 +848,118 @@ def update_elu_with_pdf_data(elu: dict, pdf_data: dict) -> bool:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# PDF declarations directory management
+# ══════════════════════════════════════════════════════════════════════════════
+
+def process_local_pdf(pdf_path: str, use_ocr: bool = True) -> dict | None:
+    """
+    Parse a local PDF file, save the result to pdf_declarations/ as a per-PDF JSON,
+    and return the parsed data.
+    """
+    if not os.path.exists(pdf_path):
+        print(f"  ✗ File not found: {pdf_path}")
+        return None
+
+    os.makedirs(PDF_DECLARATIONS_DIR, exist_ok=True)
+
+    print(f"\n📄 Processing: {pdf_path}")
+    result = parse_pdf_declaration(pdf_path, use_ocr=use_ocr)
+
+    # Derive a meaningful filename from the PDF
+    base = os.path.splitext(os.path.basename(pdf_path))[0]
+    out_path = os.path.join(PDF_DECLARATIONS_DIR, f"{base}.json")
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+    print(f"  ✓ Saved to {out_path}")
+
+    return result
+
+
+def merge_pdf_declarations_to_main() -> int:
+    """
+    Merge all per-PDF JSONs in pdf_declarations/ into a combined pdf_merged.json
+    then merge that data into elus.json.
+    Returns the number of elus updated.
+    """
+    if not os.path.isdir(PDF_DECLARATIONS_DIR):
+        print(f"  ✗ No pdf_declarations directory: {PDF_DECLARATIONS_DIR}")
+        return 0
+
+    # Collect all per-PDF JSONs
+    all_pdf_data: list[dict] = []
+    for fname in sorted(os.listdir(PDF_DECLARATIONS_DIR)):
+        if not fname.endswith(".json") or fname == "pdf_merged.json":
+            continue
+        fpath = os.path.join(PDF_DECLARATIONS_DIR, fname)
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                data["_source_file"] = fname
+                all_pdf_data.append(data)
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"  ⚠ Skipping {fname}: {exc}")
+
+    if not all_pdf_data:
+        print("  ℹ No PDF declarations to merge")
+        return 0
+
+    # Write merged JSON
+    merged = {
+        "merged_at": datetime.now(timezone.utc).isoformat(),
+        "total_pdfs": len(all_pdf_data),
+        "declarations": all_pdf_data,
+    }
+    with open(PDF_MERGED_JSON, "w", encoding="utf-8") as f:
+        json.dump(merged, f, ensure_ascii=False, indent=2)
+    print(f"  ✓ Merged {len(all_pdf_data)} PDFs → {PDF_MERGED_JSON}")
+
+    # Now merge into elus.json by matching names from PDF filenames
+    elus = load_elus()
+    if not elus:
+        print("  ⚠ elus.json empty or not found — skipping merge to main")
+        return 0
+
+    updated_count = 0
+    for pdf_data in all_pdf_data:
+        # Try to match elu by filename pattern: prenom-nom-*.json
+        source_file = pdf_data.get("_source_file", "")
+        base = source_file.replace(".json", "")
+        # HATVP filename pattern: nom-prenom-diaXXXXX-mandat.pdf → nom-prenom-diaXXXXX-mandat
+        parts = base.split("-")
+        if len(parts) >= 2:
+            # Try matching: parts[0]=nom, parts[1]=prenom
+            file_nom = parts[0]
+            file_prenom = parts[1]
+            file_key = normalize_name(f"{file_prenom} {file_nom}")
+
+            for elu in elus:
+                elu_key = normalize_name(f"{elu.get('prenom', '')} {elu.get('nom', '')}")
+                if elu_key == file_key:
+                    # Merge PDF financial data into elu (if any)
+                    update_elu_with_pdf_data(elu, pdf_data)
+                    # Always store a reference to the PDF data in hatvp
+                    if not elu.get("hatvp"):
+                        elu["hatvp"] = {}
+                    if "pdf_declarations" not in elu["hatvp"]:
+                        elu["hatvp"]["pdf_declarations"] = []
+                    elu["hatvp"]["pdf_declarations"].append({
+                        "source_pdf": source_file.replace(".json", ".pdf"),
+                        "parsed_at": pdf_data.get("parsed_at", ""),
+                        "extraction_method": pdf_data.get("extraction_method", ""),
+                        "sections_found": pdf_data.get("sections_found", []),
+                        "summary": pdf_data.get("summary", {}),
+                    })
+                    updated_count += 1
+                    break
+
+    if updated_count:
+        save_elus(elus)
+        print(f"  ✓ {updated_count} élu(s) mis à jour depuis les PDFs")
+
+    return updated_count
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # I/O
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -877,6 +995,20 @@ def main():
 
     os.makedirs(PDF_CACHE_DIR, exist_ok=True)
     use_ocr = not args.no_ocr
+
+    # ── Process a local PDF → save to pdf_declarations/ ──────────────────────
+    if args.process_local:
+        result = process_local_pdf(args.process_local, use_ocr=use_ocr)
+        if result:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    # ── Merge all pdf_declarations/*.json → elus.json ────────────────────────
+    if args.merge_to_main:
+        print("\n🔗 Merging PDF declarations into elus.json…")
+        count = merge_pdf_declarations_to_main()
+        print(f"\n✅ Merge complete — {count} élu(s) updated")
+        return
 
     # ── Test with specific file ──────────────────────────────────────────────
     if args.test_file:
