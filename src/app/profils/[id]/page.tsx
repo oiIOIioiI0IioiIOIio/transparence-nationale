@@ -121,6 +121,10 @@ const DETAIL_FIELD_LABELS: Record<string, string> = {
   employeur: 'Employeur',
   periode: 'Période',
   commentaire: 'Commentaire',
+  valeur: 'Valeur',
+  solde: 'Solde',
+  montant: 'Montant',
+  remuneration: 'Rémunération',
 };
 
 // Fields that represent money amounts (displayed with formatMoney)
