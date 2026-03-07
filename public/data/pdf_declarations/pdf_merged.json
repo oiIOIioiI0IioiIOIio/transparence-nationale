@@ -1,11 +1,11 @@
 {
-  "merged_at": "2026-03-07T20:43:44.391373+00:00",
+  "merged_at": "2026-03-07T23:28:52.861493+00:00",
   "total_pdfs": 1,
   "declarations": [
     {
       "source": "pdf",
       "pdf_path": "public/attal-gabriel-dia30320-depute-92.pdf",
-      "parsed_at": "2026-03-07T20:43:44.034661+00:00",
+      "parsed_at": "2026-03-07T23:28:52.523273+00:00",
       "extraction_method": "pdfplumber",
       "raw_text_length": 4402,
       "sections_found": [
