@@ -948,7 +948,7 @@ def update_elu_with_pdf_data(elu: dict, pdf_data: dict) -> bool:
     for section_name, detail_key in section_to_detail_key.items():
         items = pdf_data.get(section_name, [])
         if items:
-            if not elu.get(detail_key):
+            if detail_key not in elu:
                 elu[detail_key] = items
                 updated = True
             else:
@@ -1248,7 +1248,7 @@ def main():
         revenus = summary.get("revenus_euro", 0)
         sections = result.get("sections_found", []) if isinstance(result.get("sections_found"), list) else []
         has_section_data = any(
-            result.get(sec) for sec in SECTION_PATTERNS if sec in result
+            result.get(sec) for sec in SECTION_PATTERNS
         )
 
         # Save results when ANY useful data is extracted (not just patrimoine)
