@@ -81,7 +81,7 @@ def parse_args():
     p.add_argument("--test-file", type=str, help="Test with a local PDF file")
     p.add_argument("--test-elu", type=str, help="Test with a specific elu name")
     p.add_argument("--batch", action="store_true",
-                   help="Process all elus that have patrimoine=0")
+                   help="Process all elus to extract PDF data")
     p.add_argument("--limit", type=int, default=None,
                    help="Limit number of elus to process in batch mode")
     p.add_argument("--delay", type=float, default=0.5,
@@ -105,18 +105,31 @@ def parse_args():
 # Network utilities
 # ══════════════════════════════════════════════════════════════════════════════
 
-def http_get(url: str, timeout: int = 60) -> bytes | None:
-    """Download a URL and return binary content, or None on failure."""
+def http_get(url: str, timeout: int = 60, retries: int = 3) -> bytes | None:
+    """Download a URL and return binary content, or None on failure.
+    Retries transient errors with exponential backoff."""
     req = urllib.request.Request(url, headers=HEADERS)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            if resp.status == 200:
-                return resp.read()
-    except urllib.error.HTTPError as exc:
-        if exc.code not in (404, 403, 410):
-            print(f"  ⚠ HTTP {exc.code} → {url}")
-    except Exception as exc:
-        print(f"  ⚠ Network error: {exc}")
+    for attempt in range(1, retries + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if resp.status == 200:
+                    return resp.read()
+        except urllib.error.HTTPError as exc:
+            if exc.code in (404, 403, 410):
+                return None
+            if attempt < retries:
+                wait = 2 ** attempt
+                print(f"  ⚠ HTTP {exc.code} → {url} (retry {attempt}/{retries} in {wait}s)")
+                time.sleep(wait)
+            else:
+                print(f"  ⚠ HTTP {exc.code} → {url} (all {retries} attempts failed)")
+        except Exception as exc:
+            if attempt < retries:
+                wait = 2 ** attempt
+                print(f"  ⚠ Network error: {exc} (retry {attempt}/{retries} in {wait}s)")
+                time.sleep(wait)
+            else:
+                print(f"  ⚠ Network error: {exc} (all {retries} attempts failed)")
     return None
 
 
@@ -886,6 +899,7 @@ def process_elu_pdfs(
 def update_elu_with_pdf_data(elu: dict, pdf_data: dict) -> bool:
     """
     Update an elu dict with data extracted from PDF.
+    Stores ALL extracted data (patrimoine, revenus, activités, mandats, etc.).
     Returns True if any data was updated.
     """
     summary = pdf_data.get("summary", {})
@@ -910,6 +924,39 @@ def update_elu_with_pdf_data(elu: dict, pdf_data: dict) -> bool:
     if pdf_placements > 0 and pdf_placements > current_placements:
         elu["placements_montant"] = pdf_placements
         updated = True
+
+    # Update revenus
+    pdf_revenus = summary.get("revenus_euro", 0)
+    if pdf_revenus > 0 and pdf_revenus > elu.get("revenus", 0):
+        elu["revenus"] = pdf_revenus
+        elu["revenus_source"] = "pdf_hatvp"
+        updated = True
+
+    # Store all section details extracted from PDFs
+    section_to_detail_key = {
+        "biens_immobiliers": "details_biens_immobiliers",
+        "comptes_bancaires": "details_comptes_bancaires",
+        "instruments_financiers": "details_instruments_financiers",
+        "participations_financieres": "details_participations_financieres",
+        "vehicules": "details_vehicules",
+        "biens_mobiliers_valeur": "details_biens_mobiliers",
+        "dettes": "details_dettes",
+        "revenus": "details_revenus",
+        "activites_professionnelles": "details_activites_professionnelles",
+        "mandats_electifs": "details_mandats_electifs",
+    }
+    for section_name, detail_key in section_to_detail_key.items():
+        items = pdf_data.get(section_name, [])
+        if items:
+            if detail_key not in elu:
+                elu[detail_key] = items
+                updated = True
+            else:
+                existing = {json.dumps(it, sort_keys=True) for it in elu[detail_key]}
+                for it in items:
+                    if json.dumps(it, sort_keys=True) not in existing:
+                        elu[detail_key].append(it)
+                        updated = True
 
     # Add PDF metadata
     if not elu.get("hatvp_pdf"):
@@ -1163,9 +1210,9 @@ def main():
         print("⚠ elus.json is empty or not found")
         return
 
-    # Filter to elus that need PDF data (patrimoine=0)
-    candidates = [e for e in elus if e.get("patrimoine", 0) == 0]
-    print(f"\n📊 {len(candidates)} elus with patrimoine=0 (out of {len(elus)} total)")
+    # Process all elus (not just patrimoine=0) to extract all available data
+    candidates = list(elus)
+    print(f"\n📊 {len(candidates)} elus to process")
 
     if args.limit:
         candidates = candidates[:args.limit]
@@ -1198,13 +1245,27 @@ def main():
         processed += 1
         summary = result.get("summary", {})
         patrimoine = summary.get("patrimoine_brut_euro", 0)
+        revenus = summary.get("revenus_euro", 0)
+        sections = result.get("sections_found", []) if isinstance(result.get("sections_found"), list) else []
+        has_section_data = any(
+            result.get(sec) for sec in SECTION_PATTERNS
+        )
 
-        if patrimoine > 0:
+        # Save results when ANY useful data is extracted (not just patrimoine)
+        if patrimoine > 0 or revenus > 0 or has_section_data:
             updated_count += 1
             updated_ids[elu_id] = result
-            print(f"  ✓ Patrimoine: {patrimoine:,.0f} €")
+            parts = []
+            if patrimoine > 0:
+                parts.append(f"Patrimoine: {patrimoine:,.0f} €")
+            if revenus > 0:
+                parts.append(f"Revenus: {revenus:,.0f} €")
+            if has_section_data:
+                section_names = [sec for sec in SECTION_PATTERNS if result.get(sec)]
+                parts.append(f"Sections: {', '.join(section_names)}")
+            print(f"  ✓ {' | '.join(parts)}")
         else:
-            print(f"  ○ PDF parsed but no patrimoine extracted")
+            print(f"  ○ PDF parsed but no data extracted")
 
         # Save detailed result
         if not args.dry_run:
@@ -1225,7 +1286,7 @@ def main():
     print("=" * 65)
     print(f"  Total candidates     : {total}")
     print(f"  ✓ PDFs processed     : {processed}")
-    print(f"  ✓ Patrimoine updated : {updated_count}")
+    print(f"  ✓ Elus updated       : {updated_count}")
     print(f"  ✗ No PDFs found      : {failed}")
     print("=" * 65)
 
