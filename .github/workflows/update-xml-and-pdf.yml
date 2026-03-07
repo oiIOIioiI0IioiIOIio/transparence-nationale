@@ -113,7 +113,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           DATE=$(date -u +"%Y-%m-%d")
           COUNT=${{ steps.check_changes.outputs.count }}
-          git add public/data/elus.json public/data/pdf_declarations/ public/data/elus/
+          git add public/data/elus.json public/data/pdf_declarations/
+          git add -f public/data/elus/
           git commit -m "🔄 Mise à jour XML & PDF — ${DATE} (${COUNT} élus)"
           git pull --rebase
           git push
