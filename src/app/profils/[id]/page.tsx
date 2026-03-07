@@ -69,17 +69,133 @@ const HATVP_SECTION_CONFIG: Record<string, { label: string; category: 'patrimoin
   nb_participations_exploitant:    { label: 'Participations exploitant',    category: 'interets' },
 };
 
+// Mapping nb_* keys → details_* keys in hatvp data
+const NB_TO_DETAILS_KEY: Record<string, string> = {
+  nb_biens_immobiliers: 'details_biens_immobiliers',
+  nb_parts_sci: 'details_parts_sci',
+  nb_comptes_bancaires: 'details_comptes_bancaires',
+  nb_assurances_vie: 'details_assurances_vie',
+  nb_valeurs_bourse: 'details_valeurs_bourse',
+  nb_valeurs_non_bourse: 'details_valeurs_non_bourse',
+  nb_instruments_financiers: 'details_instruments_financiers',
+  nb_participations_financieres: 'details_participations',
+  nb_fonds: 'details_fonds',
+  nb_biens_divers: 'details_biens_divers',
+  nb_vehicules: 'details_vehicules',
+  nb_dettes: 'details_dettes',
+  nb_revenus: 'details_revenus',
+  nb_activites_consultant: 'details_activites_consultant',
+  nb_activites_professionnelles: 'details_activites',
+  nb_activites_anterieures: 'details_activites_anterieures',
+  nb_mandats_electifs: 'details_mandats',
+  nb_participations_organes: 'details_participations',
+  nb_fonctions_benevoles: 'details_fonctions_benevoles',
+  nb_activites_conjoint: 'details_activites_conjoint',
+  nb_autres_liens_interets: 'details_autres_liens_interets',
+};
+
+// Human-readable labels for detail fields
+const DETAIL_FIELD_LABELS: Record<string, string> = {
+  denomination: 'Dénomination',
+  description: 'Description',
+  nature: 'Nature',
+  lieu: 'Lieu',
+  surface: 'Surface',
+  mode_acquisition: 'Mode d\'acquisition',
+  date_acquisition: 'Date d\'acquisition',
+  etablissement: 'Établissement',
+  type_compte: 'Type de compte',
+  nombre: 'Nombre',
+  gestionnaire: 'Gestionnaire',
+  date_emprunt: 'Date d\'emprunt',
+  marque: 'Marque',
+  modele: 'Modèle',
+  annee: 'Année',
+  nombre_parts: 'Nombre de parts',
+  fonction: 'Fonction',
+  organisme: 'Organisme',
+  mandat: 'Mandat',
+  type: 'Type',
+  date_debut: 'Début',
+  date_fin: 'Fin',
+  employeur: 'Employeur',
+  periode: 'Période',
+  commentaire: 'Commentaire',
+  valeur: 'Valeur',
+  solde: 'Solde',
+  montant: 'Montant',
+  remuneration: 'Rémunération',
+};
+
+// Fields that represent money amounts (displayed with formatMoney)
+const MONEY_FIELDS = new Set(['valeur', 'solde', 'montant', 'remuneration']);
+
+function DetailItemRenderer({ item, formatMoney }: { item: Record<string, unknown>; formatMoney: (v: number) => string }) {
+  // Find the primary label (denomination, description, mandat, or first string field)
+  const primaryKey = ['denomination', 'description', 'mandat', 'marque', 'etablissement', 'organisme', 'type'].find(k => item[k] != null && item[k] !== '');
+  const primaryValue = primaryKey ? String(item[primaryKey]) : null;
+
+  // Collect other fields
+  const otherFields = Object.entries(item).filter(([key, val]) => {
+    if (key === primaryKey || val == null || val === '' || val === 0) return false;
+    return true;
+  });
+
+  return (
+    <div className="p-2.5 bg-neutral-900/80 rounded-lg text-sm border border-neutral-700/50">
+      {primaryValue && <p className="text-white font-medium">{primaryValue}</p>}
+      {otherFields.length > 0 && (
+        <div className="mt-1 space-y-0.5">
+          {otherFields.map(([key, val]) => {
+            const label = DETAIL_FIELD_LABELS[key] || key.replace(/_/g, ' ');
+            const isMoney = MONEY_FIELDS.has(key);
+            const display = isMoney && typeof val === 'number' ? formatMoney(val) : String(val);
+            return (
+              <p key={key} className={`text-xs ${isMoney ? 'text-yellow-400 font-semibold' : 'text-neutral-400'}`}>
+                <span className="text-neutral-500">{label} :</span> {display}
+              </p>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProfilPage() {
   const params = useParams();
   const router = useRouter();
   const [elu, setElu] = useState<Elu | null>(null);
   const [loading, setLoading] = useState(true);
   const [showDetails, setShowDetails] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const { lang } = useLang();
+
+  const toggleSection = (key: string) => {
+    setExpandedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   useEffect(() => {
     const fetchElu = async () => {
       try {
+        // Try per-person JSON first (richer data, no detail caps)
+        const detailResp = await fetch(`/data/elus/${params.id}.json`);
+        if (detailResp.ok) {
+          const detail: Elu = await detailResp.json();
+          setElu(detail);
+          setLoading(false);
+          return;
+        }
+      } catch {
+        // Fallback below
+      }
+      try {
+        // Fallback to full elus.json
         const response = await fetch('/data/elus.json');
         const data: Elu[] = await response.json();
         const found = data.find((e) => e.id === params.id);
@@ -435,25 +551,57 @@ export default function ProfilPage() {
                 </button>
               </div>
 
-              {/* Vue resumee (toujours visible) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
-                {hatvpSections.map(({ key, count, label, value }) => (
-                  <div
-                    key={key}
-                    className="flex items-center justify-between p-3 bg-neutral-900/60 rounded-lg"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-2 h-2 rounded-full bg-red-900/300 flex-shrink-0" />
-                      <span className="text-sm text-neutral-300 truncate">{label}</span>
-                    </div>
-                    <div className="text-right flex-shrink-0 ml-2">
-                      <span className="text-sm font-bold text-white">{count}</span>
-                      {value != null && value > 0 && (
-                        <p className="text-xs text-neutral-500">{formatMoney(value)}</p>
+              {/* Vue resumee — chaque catégorie est un menu déroulant */}
+              <div className="space-y-1.5">
+                {hatvpSections.map(({ key, count, label, value }) => {
+                  const detailsKey = NB_TO_DETAILS_KEY[key];
+                  const details = detailsKey ? (elu.hatvp?.[detailsKey] as Record<string, unknown>[] | undefined) : undefined;
+                  const hasDetails = details && details.length > 0;
+                  const isExpanded = expandedSections.has(key);
+
+                  return (
+                    <div key={key}>
+                      <button
+                        onClick={() => hasDetails && toggleSection(key)}
+                        className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors ${
+                          isExpanded ? 'bg-neutral-700/60' : 'bg-neutral-900/60'
+                        } ${hasDetails ? 'cursor-pointer hover:bg-neutral-700/50' : 'cursor-default'}`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          {hasDetails ? (
+                            isExpanded
+                              ? <ChevronUp size={14} className="text-red-500 flex-shrink-0" />
+                              : <ChevronDown size={14} className="text-red-500 flex-shrink-0" />
+                          ) : (
+                            <div className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0">
+                              <div className="w-2 h-2 rounded-full bg-red-500/30" />
+                            </div>
+                          )}
+                          <span className="text-sm text-neutral-300 truncate text-left">{label}</span>
+                        </div>
+                        <div className="text-right flex-shrink-0 ml-2">
+                          <span className="text-sm font-bold text-white">{count}</span>
+                          {value != null && value > 0 && (
+                            <p className="text-xs text-neutral-500">{formatMoney(value)}</p>
+                          )}
+                        </div>
+                      </button>
+
+                      {isExpanded && details && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          transition={{ duration: 0.2 }}
+                          className="mt-1 ml-4 space-y-1 pb-1"
+                        >
+                          {details.map((item, idx) => (
+                            <DetailItemRenderer key={idx} item={item} formatMoney={formatMoney} />
+                          ))}
+                        </motion.div>
                       )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Vue détaillée (expandable) */}
@@ -662,81 +810,6 @@ export default function ProfilPage() {
                   )}
 
                   {/* Détails activités (entreprises, rémunérations) */}
-                  {elu.hatvp?.details_activites && elu.hatvp.details_activites.length > 0 && (
-                    <div>
-                      <h4 className="text-base font-semibold text-neutral-200 mb-3 flex items-center gap-2 border-b border-neutral-700 pb-2">
-                        <Briefcase size={16} className="text-yellow-400" />
-                        {lang === 'fr' ? 'Détail des activités et entreprises' : 'Activities & Companies Detail'}
-                      </h4>
-                      <div className="space-y-2">
-                        {elu.hatvp.details_activites.map((act, idx) => (
-                          <div key={idx} className="p-2.5 bg-neutral-900/60 rounded-lg text-sm border border-neutral-700">
-                            {act.denomination && <p className="text-white font-medium">{act.denomination}</p>}
-                            {act.fonction && <p className="text-neutral-400 text-xs mt-0.5">{act.fonction}</p>}
-                            {act.remuneration && <p className="text-yellow-400 text-xs mt-0.5 font-semibold">{act.remuneration}</p>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Détails mandats (organismes, rémunérations) */}
-                  {elu.hatvp?.details_mandats && elu.hatvp.details_mandats.length > 0 && (
-                    <div>
-                      <h4 className="text-base font-semibold text-neutral-200 mb-3 flex items-center gap-2 border-b border-neutral-700 pb-2">
-                        <Landmark size={16} className="text-red-400" />
-                        {lang === 'fr' ? 'Détail des mandats et rémunérations' : 'Mandate & Salary Detail'}
-                      </h4>
-                      <div className="space-y-2">
-                        {elu.hatvp.details_mandats.map((m, idx) => (
-                          <div key={idx} className="p-2.5 bg-neutral-900/60 rounded-lg text-sm border border-neutral-700">
-                            {m.mandat && <p className="text-white font-medium">{m.mandat}</p>}
-                            {m.organisme && <p className="text-neutral-400 text-xs mt-0.5">{m.organisme}</p>}
-                            {m.remuneration && <p className="text-yellow-400 text-xs mt-0.5 font-semibold">{m.remuneration}</p>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Détails participations (sociétés, types) */}
-                  {elu.hatvp?.details_participations && elu.hatvp.details_participations.length > 0 && (
-                    <div>
-                      <h4 className="text-base font-semibold text-neutral-200 mb-3 flex items-center gap-2 border-b border-neutral-700 pb-2">
-                        <Building2 size={16} className="text-neutral-300" />
-                        {lang === 'fr' ? 'Détail des participations et sociétés' : 'Participations & Companies Detail'}
-                      </h4>
-                      <div className="space-y-2">
-                        {elu.hatvp.details_participations.map((p, idx) => (
-                          <div key={idx} className="p-2.5 bg-neutral-900/60 rounded-lg text-sm border border-neutral-700">
-                            {p.denomination && <p className="text-white font-medium">{p.denomination}</p>}
-                            {p.type && <p className="text-neutral-400 text-xs mt-0.5">{p.type}</p>}
-                            {p.valeur && <p className="text-yellow-400 text-xs mt-0.5 font-semibold">{p.valeur}</p>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Détails revenus (types, organismes, montants) */}
-                  {elu.hatvp?.details_revenus && elu.hatvp.details_revenus.length > 0 && (
-                    <div>
-                      <h4 className="text-base font-semibold text-neutral-200 mb-3 flex items-center gap-2 border-b border-neutral-700 pb-2">
-                        <Receipt size={16} className="text-yellow-400" />
-                        {lang === 'fr' ? 'Détail des revenus par source' : 'Income Detail by Source'}
-                      </h4>
-                      <div className="space-y-2">
-                        {elu.hatvp.details_revenus.map((r, idx) => (
-                          <div key={idx} className="p-2.5 bg-neutral-900/60 rounded-lg text-sm border border-neutral-700">
-                            {r.type && <p className="text-white font-medium">{r.type}</p>}
-                            {r.organisme && <p className="text-neutral-400 text-xs mt-0.5">{r.organisme}</p>}
-                            {r.montant && <p className="text-yellow-400 text-xs mt-0.5 font-semibold">{r.montant}</p>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
                   {/* Note source */}
                   <div className="text-xs text-neutral-500 pt-2 border-t border-neutral-700">
                     {t('profil.note_source', lang)}

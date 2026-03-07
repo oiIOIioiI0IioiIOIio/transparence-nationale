@@ -47,6 +47,7 @@ from datetime import datetime, timezone
 SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 OUTPUT_JSON  = os.path.join(PROJECT_ROOT, "public", "data", "elus.json")
+ELUS_DETAIL_DIR = os.path.join(PROJECT_ROOT, "public", "data", "elus")
 CACHE_DIR    = os.path.join(PROJECT_ROOT, "public", "data", "hatvp_cache")
 INDEX_CACHE  = os.path.join(CACHE_DIR, "liste.csv")
 XML_CACHE    = os.path.join(CACHE_DIR, "declarations.xml")
@@ -123,6 +124,8 @@ def parse_args():
                    help="Disable OCR in PDF parsing (faster)")
     p.add_argument("--enrich-csv-only",  action="store_true",
                    help="Enrichir elus.json depuis le CSV local (sans télécharger de XMLs)")
+    p.add_argument("--split-elus",       action="store_true",
+                   help="Générer les fichiers JSON par personne (public/data/elus/{id}.json) depuis elus.json")
     return p.parse_args()
 
 
@@ -1237,6 +1240,234 @@ def build_resume_hatvp(data: dict) -> dict:
     return resume
 
 
+def build_full_detail_hatvp(data: dict) -> dict:
+    """Build full detail dict for per-person JSON (no MAX_DETAIL_ITEMS cap)."""
+    # Reuse resume logic but without item caps
+    resume = build_resume_hatvp(data)
+
+    # Now re-extract ALL details without the 20-item cap
+    def _first_financial(item: dict):
+        for k in FINANCIAL_FIELD_NAMES:
+            v = item.get(k)
+            if v is not None:
+                if isinstance(v, str):
+                    v = parse_montant(v)
+                if isinstance(v, (int, float)):
+                    return v
+        return None
+
+    def _compact(d: dict) -> dict:
+        return {k: v for k, v in d.items() if v not in (None, "", 0, 0.0)}
+
+    # Map section_name → (details_key, extractor)
+    # Each extractor takes a raw item dict and returns a compact detail dict
+    def _act(item):
+        return _compact({
+            "denomination": item.get("denomination") or item.get("denomination_label") or item.get("employeur") or "",
+            "remuneration": _first_financial(item),
+            "fonction": item.get("fonction") or item.get("fonction_label") or item.get("activite") or item.get("activite_label") or "",
+        })
+
+    def _mandat(item):
+        return _compact({
+            "mandat": item.get("mandat") or item.get("mandat_label") or item.get("typeMandat") or item.get("typeMandat_label") or "",
+            "organisme": item.get("organisme") or item.get("organisme_label") or item.get("collectivite") or item.get("collectivite_label") or "",
+            "remuneration": _first_financial(item),
+        })
+
+    def _part(item):
+        return _compact({
+            "denomination": item.get("denomination") or item.get("denomination_label") or item.get("designation") or "",
+            "type": item.get("nature") or item.get("nature_label") or item.get("type") or item.get("type_label") or "",
+            "valeur": _first_financial(item),
+        })
+
+    def _rev(item):
+        return _compact({
+            "type": item.get("type_revenu") or item.get("nature") or item.get("nature_label") or item.get("description") or "",
+            "organisme": item.get("organisme") or item.get("organisme_label") or item.get("denomination") or item.get("employeur") or "",
+            "montant": _first_financial(item),
+        })
+
+    def _immo(item):
+        return _compact({
+            "description": item.get("description") or item.get("description_label") or "",
+            "nature": item.get("nature") or item.get("nature_label") or item.get("typeBien") or item.get("typeBien_label") or "",
+            "lieu": item.get("lieu") or item.get("localisation") or item.get("commune") or item.get("commune_label") or item.get("adresse") or "",
+            "surface": item.get("surface") or item.get("surfaceBien") or "",
+            "mode_acquisition": item.get("modeAcquisition") or item.get("modeAcquisition_label") or item.get("modeDetention") or item.get("modeDetention_label") or "",
+            "date_acquisition": item.get("dateAcquisition") or item.get("anneeAcquisition") or "",
+            "valeur": _first_financial(item),
+        })
+
+    def _compte(item):
+        return _compact({
+            "etablissement": item.get("etablissement") or item.get("banque") or item.get("nomEtablissement") or item.get("organisme") or "",
+            "type_compte": item.get("nature") or item.get("nature_label") or item.get("typeCompte") or item.get("typeCompte_label") or "",
+            "description": item.get("description") or "",
+            "solde": _first_financial(item),
+        })
+
+    def _bourse(item):
+        return _compact({
+            "denomination": item.get("denomination") or item.get("denomination_label") or item.get("description") or "",
+            "nature": item.get("nature") or item.get("nature_label") or "",
+            "nombre": item.get("nombre") or item.get("nombreParts") or "",
+            "valeur": _first_financial(item),
+        })
+
+    def _assurance(item):
+        return _compact({
+            "organisme": item.get("organisme") or item.get("organisme_label") or item.get("assureur") or item.get("denomination") or "",
+            "description": item.get("description") or item.get("nature") or item.get("nature_label") or "",
+            "valeur": _first_financial(item),
+        })
+
+    def _fond(item):
+        return _compact({
+            "denomination": item.get("denomination") or item.get("denomination_label") or item.get("description") or "",
+            "gestionnaire": item.get("gestionnaire") or item.get("organisme") or "",
+            "valeur": _first_financial(item),
+        })
+
+    def _instr(item):
+        return _compact({
+            "denomination": item.get("denomination") or item.get("denomination_label") or item.get("description") or "",
+            "nature": item.get("nature") or item.get("nature_label") or "",
+            "valeur": _first_financial(item),
+        })
+
+    def _dette(item):
+        return _compact({
+            "organisme": item.get("organisme") or item.get("organisme_label") or item.get("etablissement") or item.get("preteur") or "",
+            "description": item.get("description") or item.get("objet") or item.get("nature") or item.get("nature_label") or "",
+            "date_emprunt": item.get("dateEmprunt") or item.get("dateContractation") or "",
+            "montant": _first_financial(item),
+        })
+
+    def _vehicule(item):
+        return _compact({
+            "marque": item.get("marque") or item.get("marque_label") or "",
+            "modele": item.get("modele") or item.get("designation") or item.get("description") or "",
+            "annee": item.get("annee") or item.get("anneeMiseEnCirculation") or "",
+            "mode_acquisition": item.get("modeAcquisition") or item.get("modeAcquisition_label") or "",
+            "valeur": _first_financial(item),
+        })
+
+    def _sci(item):
+        return _compact({
+            "denomination": item.get("denomination") or item.get("denomination_label") or item.get("designation") or "",
+            "nombre_parts": item.get("nombreParts") or item.get("nombre") or "",
+            "valeur": _first_financial(item),
+        })
+
+    def _divers(item):
+        return _compact({
+            "description": item.get("description") or item.get("nature") or item.get("nature_label") or "",
+            "valeur": _first_financial(item),
+        })
+
+    def _conjoint(item):
+        return _compact({
+            "denomination": item.get("denomination") or item.get("denomination_label") or item.get("employeur") or "",
+            "fonction": item.get("fonction") or item.get("fonction_label") or item.get("activite") or item.get("activite_label") or "",
+            "remuneration": _first_financial(item),
+        })
+
+    def _benevole(item):
+        return _compact({
+            "denomination": item.get("denomination") or item.get("denomination_label") or item.get("organisme") or "",
+            "fonction": item.get("fonction") or item.get("fonction_label") or item.get("activite") or "",
+        })
+
+    def _anterieure(item):
+        return _compact({
+            "denomination": item.get("denomination") or item.get("denomination_label") or item.get("employeur") or "",
+            "fonction": item.get("fonction") or item.get("fonction_label") or item.get("activite") or item.get("activite_label") or "",
+            "date_debut": item.get("dateDebut") or "",
+            "date_fin": item.get("dateFin") or "",
+            "remuneration": _first_financial(item),
+        })
+
+    def _consultant(item):
+        return _compact({
+            "denomination": item.get("denomination") or item.get("denomination_label") or item.get("employeur") or "",
+            "fonction": item.get("fonction") or item.get("fonction_label") or "",
+            "remuneration": _first_financial(item),
+        })
+
+    def _liens(item):
+        return _compact({
+            "description": item.get("description") or item.get("nature") or item.get("nature_label") or item.get("denomination") or "",
+            "organisme": item.get("organisme") or item.get("organisme_label") or "",
+        })
+
+    SECTION_EXTRACTORS = {
+        "activites_professionnelles": ("details_activites", _act),
+        "mandats_electifs":           ("details_mandats", _mandat),
+        "participations_financieres": ("details_participations", _part),
+        "participations_organes":     ("details_participations", _part),
+        "revenus":                    ("details_revenus", _rev),
+        "biens_immobiliers":          ("details_biens_immobiliers", _immo),
+        "comptes_bancaires":          ("details_comptes_bancaires", _compte),
+        "valeurs_bourse":             ("details_valeurs_bourse", _bourse),
+        "valeurs_non_bourse":         ("details_valeurs_non_bourse", _bourse),
+        "assurances_vie":             ("details_assurances_vie", _assurance),
+        "fonds":                      ("details_fonds", _fond),
+        "instruments_financiers":     ("details_instruments_financiers", _instr),
+        "dettes":                     ("details_dettes", _dette),
+        "vehicules":                  ("details_vehicules", _vehicule),
+        "parts_sci":                  ("details_parts_sci", _sci),
+        "biens_divers":               ("details_biens_divers", _divers),
+        "activites_conjoint":         ("details_activites_conjoint", _conjoint),
+        "fonctions_benevoles":        ("details_fonctions_benevoles", _benevole),
+        "activites_anterieures":      ("details_activites_anterieures", _anterieure),
+        "activites_consultant":       ("details_activites_consultant", _consultant),
+        "autres_liens_interets":      ("details_autres_liens_interets", _liens),
+    }
+
+    for section_name, (details_key, extractor) in SECTION_EXTRACTORS.items():
+        items = data.get(section_name, [])
+        if not items:
+            continue
+        details = [d for d in (extractor(item) for item in items) if d]
+        if details:
+            if details_key in resume:
+                resume[details_key].extend(details)
+            else:
+                resume[details_key] = details
+
+    # Declarations (no cap)
+    decls = data.get("declarations", [])
+    if decls:
+        resume["declarations_detail"] = [
+            _compact({
+                "type": d.get("type", ""),
+                "label": d.get("label", ""),
+                "date_depot": d.get("date_depot", ""),
+                "qualite": d.get("qualite", ""),
+                "organe": d.get("organe", ""),
+            })
+            for d in decls
+            if d and not d.get("dry_run")
+        ]
+
+    return resume
+
+
+def save_elu_detail(elu: dict, hatvp_full: dict) -> None:
+    """Save a per-person JSON file to public/data/elus/{id}.json."""
+    os.makedirs(ELUS_DETAIL_DIR, exist_ok=True)
+    elu_id = elu.get("id", "")
+    if not elu_id:
+        return
+    detail = dict(elu)
+    detail["hatvp"] = hatvp_full
+    out_path = os.path.join(ELUS_DETAIL_DIR, f"{elu_id}.json")
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(detail, f, ensure_ascii=False, separators=(",", ":"))
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # I/O elus.json
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1452,6 +1683,26 @@ def main():
         print(f"\n✅ Enrichissement terminé — {len(all_elus)} élus")
         return
 
+    # ── Mode split: generate per-person JSON files from existing elus.json ────
+    if args.split_elus:
+        print("\n📂 Génération des fichiers JSON par personne…")
+        all_elus = load_elus()
+        if not all_elus:
+            print("⚠ elus.json vide ou introuvable.")
+            return
+        os.makedirs(ELUS_DETAIL_DIR, exist_ok=True)
+        count = 0
+        for elu in all_elus:
+            elu_id = elu.get("id", "")
+            if not elu_id:
+                continue
+            out_path = os.path.join(ELUS_DETAIL_DIR, f"{elu_id}.json")
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(elu, f, ensure_ascii=False, separators=(",", ":"))
+            count += 1
+        print(f"✅ {count} fichiers JSON générés dans {ELUS_DETAIL_DIR}")
+        return
+
     # ── Charger le XML global ──────────────────────────────────────────────────
     print("\n📥 Chargement du XML global HATVP…")
     xml_root = load_declarations_xml(force_refresh=args.refresh_xml, delay=args.delay)
@@ -1578,16 +1829,29 @@ def main():
     # ���─ Mettre à jour elus.json ────────────────────────────────────────────────
     if not args.dry_run and updated:
         all_elus = load_elus()
+        # Build full detail (no cap) for per-person JSONs
+        full_details: dict[str, dict] = {}
+        for eid in updated:
+            cache_path = os.path.join(CACHE_DIR, f"{eid}.json")
+            if os.path.exists(cache_path):
+                try:
+                    with open(cache_path, "r", encoding="utf-8") as f:
+                        raw_result = json.load(f)
+                    full_details[eid] = build_full_detail_hatvp(raw_result)
+                except (json.JSONDecodeError, OSError):
+                    full_details[eid] = updated[eid]
+            else:
+                full_details[eid] = updated[eid]
+
         for e in all_elus:
             eid = e.get("id")
             if eid in updated:
                 resume = updated[eid]
                 e["hatvp"] = resume
-                # Mettre à jour les champs top-level avec les données HATVP
                 if resume.get("total_revenus_euro", 0) > 0:
                     e["revenus"] = resume["total_revenus_euro"]
                 elif e.get("revenus", 0) == 85296:
-                    # 85296 = fake default revenue (≈ député brut annuel) applied to all elus in initial data
+                    # 85296 = fake default revenue (≈ député brut annuel) from initial data
                     e["revenus"] = 0
                 pat_net = resume.get("patrimoine_net_euro", 0)
                 if pat_net:
@@ -1604,7 +1868,9 @@ def main():
                         + resume.get("valeur_assurances_vie_euro", 0)
                         + resume.get("valeur_fonds_euro", 0)
                     )
-        # Enrichir les métadonnées depuis le CSV
+                # Save per-person JSON with full details (no item cap)
+                save_elu_detail(e, full_details.get(eid, resume))
+
         enrich_elus_from_csv(all_elus, csv_index)
         save_elus(all_elus)
 

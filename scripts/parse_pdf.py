@@ -207,14 +207,26 @@ def extract_text_ocr(pdf_path: str) -> str:
 def extract_text_from_pdf(pdf_path: str, use_ocr: bool = True) -> str:
     """
     Extract text from a PDF file.
-    Tries pdfplumber first, falls back to OCR if text is too short.
+    Tries pdfplumber first (handles native text PDFs efficiently),
+    falls back to OCR only if text is too short or lacks meaningful content.
     """
     text = extract_text_pdfplumber(pdf_path)
 
-    if len(text.strip()) < MIN_TEXT_LENGTH and use_ocr:
+    # Check if pdfplumber found meaningful content
+    # Some PDFs have headers/footers but the real content is in images
+    text_stripped = text.strip()
+    has_meaningful_content = (
+        len(text_stripped) >= MIN_TEXT_LENGTH
+        and (
+            re.search(r"(?i)(?:patrimoin|immobilier|revenus?|emprunt|dettes?|r[ée]mun[ée]ration|employeur|activit[ée])", text_stripped)
+            or re.search(r"\d[\d\s]*[.,]\d{1,2}\s*(?:€|euros?)", text_stripped)
+        )
+    )
+
+    if not has_meaningful_content and use_ocr:
         print("  ℹ Text extraction yielded little content, trying OCR…")
         ocr_text = extract_text_ocr(pdf_path)
-        if len(ocr_text.strip()) > len(text.strip()):
+        if len(ocr_text.strip()) > len(text_stripped):
             text = ocr_text
 
     return text
@@ -351,6 +363,24 @@ def extract_section_items(section_text: str, section_name: str) -> list[dict]:
     items = []
     amounts = find_amounts_in_text(section_text)
 
+    # For revenue sections, try splitting by "Employeur :" blocks first
+    if section_name == "revenus":
+        employer_blocks = re.split(r"(?=(?:^|\n)\s*Employeur\s*:)", section_text)
+        employer_blocks = [b.strip() for b in employer_blocks if b.strip() and len(b.strip()) > 10]
+        if len(employer_blocks) > 1 or (employer_blocks and re.search(r"(?i)employeur\s*:", employer_blocks[0])):
+            for block in employer_blocks:
+                item = {"description": _clean_text(block[:500])}
+                block_amounts = find_amounts_in_text(block)
+                if block_amounts:
+                    item["montant_euro"] = max(block_amounts)
+                    if len(block_amounts) > 1:
+                        item["montants_details"] = sorted(block_amounts, reverse=True)
+                _extract_revenus_fields(block, item)
+                if any(v for k, v in item.items() if k != "description"):
+                    items.append(item)
+            if items:
+                return items
+
     # Split by common item separators
     # HATVP declarations often use numbered items or bullet points
     item_blocks = re.split(
@@ -446,7 +476,7 @@ def _extract_immobilier_fields(text: str, item: dict) -> None:
 
 
 def _extract_revenus_fields(text: str, item: dict) -> None:
-    """Extract revenue specific fields."""
+    """Extract revenue specific fields including employer and year-by-year salary."""
     for label, pattern in [
         ("Indemnités parlementaires", r"(?i)indemnit[ée]s?\s+parlementaires?"),
         ("Traitement", r"(?i)traitement"),
@@ -455,26 +485,78 @@ def _extract_revenus_fields(text: str, item: dict) -> None:
         ("Revenus mobiliers", r"(?i)revenus?\s+mobiliers?"),
         ("Pensions", r"(?i)pensions?|retraite"),
         ("Honoraires", r"(?i)honoraires?"),
+        ("Rémunération", r"(?i)r[ée]mun[ée]ration\s+ou\s+gratification"),
     ]:
         if re.search(pattern, text):
             item["type_revenu"] = label
             break
 
-    # Extract company/society names
-    _extract_company_name(text, item)
-
-    # Extract salary amounts specifically
-    salary_match = re.search(
-        r"(?i)(?:salaire|r[ée]mun[ée]ration|traitement)"
-        r"\s*[:;]?\s*(?:de\s+)?(\d[\d\s.,]*)\s*(?:€|euros?)",
+    # Extract employer (Employeur : ...)
+    emp_match = re.search(
+        r"(?i)employeur\s*[:;]\s*(.+?)(?:\n|$)",
         text,
     )
-    if salary_match:
-        raw = salary_match.group(1).replace(" ", "").replace(",", ".")
-        try:
-            item["salaire_euro"] = float(raw)
-        except ValueError:
-            pass
+    if emp_match:
+        employer = _clean_text(emp_match.group(1).strip())
+        if employer:
+            item["denomination"] = employer
+
+    # Extract date range (de MM/YYYY à MM/YYYY)
+    period_match = re.search(
+        r"(?i)de\s+(\d{1,2}/\d{4})\s+[àa]\s+(\d{1,2}/\d{4})",
+        text,
+    )
+    if period_match:
+        item["periode"] = f"{period_match.group(1)} à {period_match.group(2)}"
+
+    # Extract job title/function (line after employer or "Secrétaire d'Etat", "Ministre", etc.)
+    for pattern in [
+        r"(?i)(?:secr[ée]taire\s+d['\u2019][ée]tat[^\n]*)",
+        r"(?i)(?:ministre[^\n]*)",
+        r"(?i)(?:premier\s+ministre)",
+        r"(?i)(?:pr[ée]sident[^\n]*)",
+        r"(?i)(?:d[ée]put[ée]e?[^\n]*)",
+        r"(?i)(?:s[ée]nateur|s[ée]natrice)[^\n]*",
+    ]:
+        m = re.search(pattern, text)
+        if m and "fonction" not in item:
+            item["fonction"] = _clean_text(m.group(0).strip())
+
+    # Extract company/society names (original pattern)
+    if "denomination" not in item:
+        _extract_company_name(text, item)
+
+    # Extract year-by-year salary (YYYY : XX XXX € Net or YYYY : XX XXX €)
+    year_salaries = []
+    for ym in re.finditer(
+        r"(20\d{2})\s*:\s*(\d[\d\s\xa0]*(?:[.,]\d{1,2})?)\s*(?:€|euros?)\s*(?:Net|Brut|net|brut)?",
+        text,
+    ):
+        year = ym.group(1)
+        amount = parse_amount(ym.group(2))
+        if amount is not None and amount > 0:
+            year_salaries.append({"annee": year, "montant": amount})
+
+    if year_salaries:
+        item["revenus_annuels"] = year_salaries
+        # Use total of year salaries as the main amount
+        total = sum(ys["montant"] for ys in year_salaries)
+        if total > 0 and "montant_euro" not in item:
+            item["montant_euro"] = total
+
+    # Extract salary amounts specifically (existing pattern)
+    if "salaire_euro" not in item and "montant_euro" not in item:
+        salary_match = re.search(
+            r"(?i)(?:salaire|r[ée]mun[ée]ration|traitement)"
+            r"\s*[:;]?\s*(?:de\s+)?(\d[\d\s.,]*)\s*(?:€|euros?)",
+            text,
+        )
+        if salary_match:
+            raw = salary_match.group(1).replace(" ", "").replace(",", ".")
+            try:
+                item["salaire_euro"] = float(raw)
+            except ValueError:
+                pass
 
 
 def _extract_instrument_fields(text: str, item: dict) -> None:
