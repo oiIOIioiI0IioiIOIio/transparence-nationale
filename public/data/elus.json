@@ -13,7 +13,7 @@
     },
     "hatvp": {
       "nb_declarations_hatvp": 2,
-      "hatvp_scraped_at": "2026-03-07T13:15:56.669170+00:00"
+      "hatvp_scraped_at": "2026-03-07T13:30:58.349596+00:00"
     },
     "types_mandat": [
       "departement"
@@ -49,7 +49,7 @@
     },
     "hatvp": {
       "nb_declarations_hatvp": 2,
-      "hatvp_scraped_at": "2026-03-07T13:15:56.750924+00:00",
+      "hatvp_scraped_at": "2026-03-07T13:30:58.429311+00:00",
       "nb_activites_conjoint": 2,
       "nb_activites_professionnelles": 2,
       "nb_mandats_electifs": 4,
@@ -113,7 +113,7 @@
     },
     "hatvp": {
       "nb_declarations_hatvp": 1,
-      "hatvp_scraped_at": "2026-03-07T13:15:56.752587+00:00",
+      "hatvp_scraped_at": "2026-03-07T13:30:58.430927+00:00",
       "nb_activites_conjoint": 1,
       "nb_activites_professionnelles": 1,
       "nb_mandats_electifs": 4,
@@ -159,7 +159,7 @@
     },
     "hatvp": {
       "nb_declarations_hatvp": 1,
-      "hatvp_scraped_at": "2026-03-07T13:15:56.753204+00:00",
+      "hatvp_scraped_at": "2026-03-07T13:30:58.431536+00:00",
       "nb_activites_conjoint": 1,
       "nb_activites_professionnelles": 2,
       "nb_mandats_electifs": 1,
@@ -207,7 +207,7 @@
     },
     "hatvp": {
       "nb_declarations_hatvp": 2,
-      "hatvp_scraped_at": "2026-03-07T13:15:56.753748+00:00"
+      "hatvp_scraped_at": "2026-03-07T13:30:58.432121+00:00"
     },
     "photo_url": "https://www.assemblee-nationale.fr/dyn/static/tribun/17/photos/793214.jpg",
     "types_mandat": [
@@ -14347,6 +14347,31 @@
           "date_depot": "24/01/2025 14:41:51",
           "organe": "Hauts-de-Seine(92)"
         }
+      ],
+      "pdf_declarations": [
+        {
+          "source_pdf": "attal-gabriel-dia30320-depute-92.pdf",
+          "parsed_at": "2026-03-07T13:31:06.355884+00:00",
+          "extraction_method": "pdfplumber",
+          "sections_found": [
+            "revenus",
+            "participations_financieres",
+            "activites_professionnelles",
+            "mandats_electifs"
+          ],
+          "summary": {
+            "patrimoine_brut_euro": 0.0,
+            "patrimoine_net_euro": 0.0,
+            "immobilier_euro": 0.0,
+            "placements_euro": 0.0,
+            "instruments_euro": 0.0,
+            "participations_euro": 0.0,
+            "vehicules_euro": 0.0,
+            "biens_mobiliers_euro": 0.0,
+            "dettes_euro": 0.0,
+            "revenus_euro": 600.0
+          }
+        }
       ]
     },
     "photo_url": "https://www.assemblee-nationale.fr/dyn/static/tribun/17/photos/722190.jpg",
@@ -14382,7 +14407,18 @@
         "qualite": "Député des Hauts-de-Seine",
         "type_mandat": "depute"
       }
-    ]
+    ],
+    "hatvp_pdf": {
+      "parsed_at": "2026-03-07T13:31:06.355884+00:00",
+      "declarations_parsed": 0,
+      "patrimoine_brut_euro": 0.0,
+      "patrimoine_net_euro": 0.0,
+      "immobilier_euro": 0.0,
+      "placements_euro": 0.0,
+      "instruments_euro": 0.0,
+      "dettes_euro": 0.0,
+      "revenus_euro": 600.0
+    }
   },
   {
     "id": "sabrina-attari",

@@ -1,7 +1,7 @@
 {
   "source": "pdf",
   "pdf_path": "public/attal-gabriel-dia30320-depute-92.pdf",
-  "parsed_at": "2026-03-07T12:58:38.367355+00:00",
+  "parsed_at": "2026-03-07T13:31:06.355884+00:00",
   "extraction_method": "pdfplumber",
   "raw_text_length": 4402,
   "sections_found": [
