@@ -7,7 +7,7 @@ export const useElus = create<ElusStore>((set, get) => ({
   searchTerm: '',
   sortBy: 'nom',
   mandatFilter: '',
-  showPhotos: false,
+  showPhotos: true,
 
   setSearchTerm: (term: string) => set({ searchTerm: term }),
   

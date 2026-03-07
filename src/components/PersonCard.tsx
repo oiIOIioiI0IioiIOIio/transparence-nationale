@@ -5,7 +5,6 @@ import Image from 'next/image';
 import { motion } from 'framer-motion';
 import { Elu } from '@/lib/types';
 import { User, MapPin, Briefcase } from 'lucide-react';
-import { useElus } from '@/hooks/useElus';
 import { useLang, t } from '@/lib/i18n';
 
 interface PersonCardProps {
@@ -14,7 +13,6 @@ interface PersonCardProps {
 }
 
 export default function PersonCard({ elu, index }: PersonCardProps) {
-  const showPhotos = useElus((s) => s.showPhotos);
   const { lang } = useLang();
 
   const formatMoney = (value: number) => {
@@ -25,9 +23,7 @@ export default function PersonCard({ elu, index }: PersonCardProps) {
     return `${(value / 1000).toFixed(0)}K EUR`;
   };
 
-  const photoSrc = showPhotos
-    ? (elu.photo_url || (elu.photo !== '/photos/placeholder.jpg' ? elu.photo : ''))
-    : '';
+  const photoSrc = elu.photo_url || (elu.photo !== '/photos/placeholder.jpg' ? elu.photo : '');
   const hasFinancialData = (elu.patrimoine || 0) > 0 || (elu.revenus || 0) > 0;
   const nbDeclarations = elu.hatvp?.nb_declarations_hatvp || elu.declarations_csv?.length || 0;
 

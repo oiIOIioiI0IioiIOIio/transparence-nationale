@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
-import { ArrowLeft, ExternalLink, User, Briefcase, MapPin, Calendar, FileText, Scale, Building2, Landmark, Users, TrendingUp, Home, BarChart3, Wallet, Package, AlertTriangle, Receipt, ChevronDown, ChevronUp, Info } from 'lucide-react';
+import { ArrowLeft, ExternalLink, User, Briefcase, MapPin, Calendar, FileText, Scale, Building2, Landmark, Users, TrendingUp, ChevronDown, ChevronUp, Info } from 'lucide-react';
 import { Elu } from '@/lib/types';
 import { useLang, t } from '@/lib/i18n';
 import PortfolioChart from '@/components/PortfolioChart';
@@ -100,6 +100,7 @@ const DETAIL_FIELD_LABELS: Record<string, string> = {
   description: 'Description',
   nature: 'Nature',
   lieu: 'Lieu',
+  departement: 'Département',
   surface: 'Surface',
   mode_acquisition: 'Mode d\'acquisition',
   date_acquisition: 'Date d\'acquisition',
@@ -129,6 +130,80 @@ const DETAIL_FIELD_LABELS: Record<string, string> = {
 
 // Fields that represent money amounts (displayed with formatMoney)
 const MONEY_FIELDS = new Set(['valeur', 'solde', 'montant', 'remuneration']);
+
+/**
+ * Deduplicate an array of detail items by comparing their non-financial string fields.
+ * Items that have the same key fields (ignoring financial values that may differ across declarations)
+ * are merged, keeping the one with the highest financial value.
+ */
+function deduplicateDetails(items: Record<string, unknown>[]): Record<string, unknown>[] {
+  if (!items || items.length <= 1) return items;
+  const seen = new Map<string, Record<string, unknown>>();
+  for (const item of items) {
+    // Build a key from non-financial, non-empty string fields
+    const keyParts: string[] = [];
+    for (const [k, v] of Object.entries(item)) {
+      if (MONEY_FIELDS.has(k) || v == null || v === '') continue;
+      keyParts.push(`${k}:${String(v).toLowerCase().trim()}`);
+    }
+    keyParts.sort();
+    const key = keyParts.join('|');
+    if (!key) {
+      // Items with no string fields — keep all
+      seen.set(`__empty_${seen.size}`, item);
+      continue;
+    }
+    const existing = seen.get(key);
+    if (!existing) {
+      seen.set(key, item);
+    } else {
+      // Keep the one with higher financial value
+      let existingVal = 0;
+      let newVal = 0;
+      for (const f of MONEY_FIELDS) {
+        if (typeof existing[f] === 'number') existingVal = Math.max(existingVal, existing[f] as number);
+        if (typeof item[f] === 'number') newVal = Math.max(newVal, item[f] as number);
+      }
+      if (newVal > existingVal) {
+        seen.set(key, item);
+      }
+    }
+  }
+  return Array.from(seen.values());
+}
+
+/**
+ * Categorize mandats into current and past.
+ * A mandat is considered "past" if the HATVP details_mandats indicate it has ended (date_fin).
+ */
+function categorizeMandats(
+  mandats: string[],
+  fonction: string,
+  detailMandats?: { mandat?: string; organisme?: string; date_fin?: string }[]
+): { current: string[]; past: string[] } {
+  const uniqueMandats = [...new Set(mandats)];
+  const currentFonction = (fonction || '').toLowerCase().trim();
+
+  const pastMandatLabels = new Set<string>();
+  if (detailMandats) {
+    for (const dm of detailMandats) {
+      if (dm.date_fin && dm.date_fin.trim()) {
+        const label = (dm.mandat || dm.organisme || '').toLowerCase().trim();
+        if (label) pastMandatLabels.add(label);
+      }
+    }
+  }
+
+  const current = uniqueMandats.filter(m => {
+    const ml = m.toLowerCase().trim();
+    if (ml === currentFonction || currentFonction.includes(ml) || ml.includes(currentFonction)) return true;
+    return !pastMandatLabels.has(ml);
+  });
+
+  const past = uniqueMandats.filter(m => !current.includes(m));
+
+  return { current, past };
+}
 
 function DetailItemRenderer({ item, formatMoney }: { item: Record<string, unknown>; formatMoney: (v: number) => string }) {
   // Find the primary label (denomination, description, mandat, or first string field)
@@ -167,8 +242,8 @@ export default function ProfilPage() {
   const router = useRouter();
   const [elu, setElu] = useState<Elu | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showDetails, setShowDetails] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [showPastMandats, setShowPastMandats] = useState(false);
   const { lang } = useLang();
 
   const toggleSection = (key: string) => {
@@ -282,14 +357,20 @@ export default function ProfilPage() {
         }))
     : [];
 
-  // Séparer patrimoine et intérêts pour l'affichage détaillé
-  const patrimoineSections = hatvpSections.filter((s) => s.category === 'patrimoine');
-  const interetsSections = hatvpSections.filter((s) => s.category === 'interets');
-
   // Calculer des totaux pour l'affichage
   const totalActifBrut = elu.hatvp?.total_actif_brut_euro || 0;
   const totalDettes = elu.hatvp?.total_dettes_euro || 0;
   const patrimoineNet = elu.hatvp?.patrimoine_net_euro || 0;
+
+  // Sections that have expandable details
+  const expandableSectionKeys = hatvpSections
+    .filter(({ key }) => {
+      const dk = NB_TO_DETAILS_KEY[key];
+      const d = dk ? (elu.hatvp?.[dk] as Record<string, unknown>[] | undefined) : undefined;
+      return d && d.length > 0;
+    })
+    .map(({ key }) => key);
+  const allSectionsExpanded = expandableSectionKeys.length > 0 && expandableSectionKeys.every(k => expandedSections.has(k));
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-12">
@@ -539,24 +620,56 @@ export default function ProfilPage() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
                   <TrendingUp size={20} className="text-red-500" />
-                  Synthèse des déclarations
+                  {t('profil.synthese', lang)}
                 </h3>
                 <button
-                  onClick={() => setShowDetails(!showDetails)}
+                  onClick={() => {
+                    if (allSectionsExpanded) {
+                      setExpandedSections(new Set());
+                    } else {
+                      setExpandedSections(new Set(expandableSectionKeys));
+                    }
+                  }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-500 bg-red-900/30 rounded-lg hover:bg-red-900/50 transition-colors"
                 >
                   <Info size={14} />
-                  {showDetails ? 'Masquer les détails' : 'Voir les détails'}
-                  {showDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  {allSectionsExpanded ? t('profil.details.hide', lang) : t('profil.details.show', lang)}
+                  {allSectionsExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                 </button>
               </div>
 
-              {/* Vue resumee — chaque catégorie est un menu déroulant */}
+              {/* Totaux patrimoine */}
+              {(totalActifBrut > 0 || patrimoineNet > 0) && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                  {totalActifBrut > 0 && (
+                    <div className="p-3 bg-red-900/30 rounded-lg border border-red-800">
+                      <p className="text-xs text-red-500 font-medium">{t('profil.actif_brut', lang)}</p>
+                      <p className="text-lg font-bold text-red-200">{formatMoney(totalActifBrut)}</p>
+                    </div>
+                  )}
+                  {totalDettes > 0 && (
+                    <div className="p-3 bg-yellow-900/30 rounded-lg border border-yellow-800">
+                      <p className="text-xs text-yellow-400 font-medium">{t('profil.dettes_emprunts', lang)}</p>
+                      <p className="text-lg font-bold text-yellow-200">-{formatMoney(totalDettes)}</p>
+                    </div>
+                  )}
+                  {patrimoineNet > 0 && (
+                    <div className="p-3 bg-neutral-700/50 rounded-lg border border-neutral-600">
+                      <p className="text-xs text-neutral-400 font-medium">{t('profil.patrimoine_net', lang)}</p>
+                      <p className="text-lg font-bold text-white">{formatMoney(patrimoineNet)}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sections — each is an expandable dropdown with deduplicated details */}
               <div className="space-y-1.5">
                 {hatvpSections.map(({ key, count, label, value }) => {
                   const detailsKey = NB_TO_DETAILS_KEY[key];
-                  const details = detailsKey ? (elu.hatvp?.[detailsKey] as Record<string, unknown>[] | undefined) : undefined;
+                  const rawDetails = detailsKey ? (elu.hatvp?.[detailsKey] as Record<string, unknown>[] | undefined) : undefined;
+                  const details = rawDetails ? deduplicateDetails(rawDetails) : undefined;
                   const hasDetails = details && details.length > 0;
+                  const dedupCount = details ? details.length : count;
                   const isExpanded = expandedSections.has(key);
 
                   return (
@@ -580,7 +693,7 @@ export default function ProfilPage() {
                           <span className="text-sm text-neutral-300 truncate text-left">{label}</span>
                         </div>
                         <div className="text-right flex-shrink-0 ml-2">
-                          <span className="text-sm font-bold text-white">{count}</span>
+                          <span className="text-sm font-bold text-white">{dedupCount}</span>
                           {value != null && value > 0 && (
                             <p className="text-xs text-neutral-500">{formatMoney(value)}</p>
                           )}
@@ -604,226 +717,18 @@ export default function ProfilPage() {
                 })}
               </div>
 
-              {/* Vue détaillée (expandable) */}
-              {showDetails && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  transition={{ duration: 0.3 }}
-                  className="mt-6 space-y-6"
-                >
-                  {/* Ventilation du patrimoine */}
-                  {patrimoineSections.length > 0 && (
-                    <div>
-                      <h4 className="text-base font-semibold text-neutral-200 mb-3 flex items-center gap-2 border-b pb-2">
-                        <Wallet size={16} className="text-red-500" />
-                        Ventilation du patrimoine
-                      </h4>
-
-                      {/* Totaux patrimoine */}
-                      {(totalActifBrut > 0 || patrimoineNet > 0) && (
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-                          {totalActifBrut > 0 && (
-                            <div className="p-3 bg-red-900/30 rounded-lg border border-red-800">
-                              <p className="text-xs text-red-500 font-medium">Actif brut total</p>
-                              <p className="text-lg font-bold text-red-200">{formatMoney(totalActifBrut)}</p>
-                            </div>
-                          )}
-                          {totalDettes > 0 && (
-                            <div className="p-3 bg-yellow-900/30 rounded-lg border border-yellow-800">
-                              <p className="text-xs text-yellow-400 font-medium">Dettes et emprunts</p>
-                              <p className="text-lg font-bold text-yellow-200">-{formatMoney(totalDettes)}</p>
-                            </div>
-                          )}
-                          {patrimoineNet > 0 && (
-                            <div className="p-3 bg-neutral-700/50 rounded-lg border border-neutral-600">
-                              <p className="text-xs text-neutral-400 font-medium">Patrimoine net</p>
-                              <p className="text-lg font-bold text-white">{formatMoney(patrimoineNet)}</p>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Immobilier */}
-                      {patrimoineSections.filter(s => s.key === 'nb_biens_immobiliers' || s.key === 'nb_parts_sci' || s.key === 'nb_biens_etrangers').length > 0 && (
-                        <div className="mb-4">
-                          <h5 className="text-sm font-semibold text-neutral-300 mb-2 flex items-center gap-1.5">
-                            <Home size={14} className="text-red-400" />
-                            Immobilier et foncier
-                          </h5>
-                          <div className="space-y-2">
-                            {patrimoineSections
-                              .filter(s => ['nb_biens_immobiliers', 'nb_parts_sci', 'nb_biens_etrangers'].includes(s.key))
-                              .map(({ key, count, label, value }) => (
-                                <div key={key} className="flex items-center justify-between p-2.5 bg-neutral-900/60 rounded-lg text-sm">
-                                  <span className="text-neutral-300">{label}</span>
-                                  <div className="text-right">
-                                    <span className="font-semibold text-white">{count} élément{count > 1 ? 's' : ''}</span>
-                                    {value != null && value > 0 && (
-                                      <span className="ml-2 text-xs text-neutral-500">({formatMoney(value)})</span>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Placements et investissements */}
-                      {patrimoineSections.filter(s =>
-                        ['nb_comptes_bancaires', 'nb_assurances_vie', 'nb_valeurs_bourse',
-                         'nb_valeurs_non_bourse', 'nb_instruments_financiers',
-                         'nb_participations_financieres', 'nb_fonds'].includes(s.key)
-                      ).length > 0 && (
-                        <div className="mb-4">
-                          <h5 className="text-sm font-semibold text-neutral-300 mb-2 flex items-center gap-1.5">
-                            <BarChart3 size={14} className="text-green-500" />
-                            Placements et investissements
-                          </h5>
-                          <div className="space-y-2">
-                            {patrimoineSections
-                              .filter(s =>
-                                ['nb_comptes_bancaires', 'nb_assurances_vie', 'nb_valeurs_bourse',
-                                 'nb_valeurs_non_bourse', 'nb_instruments_financiers',
-                                 'nb_participations_financieres', 'nb_fonds'].includes(s.key)
-                              )
-                              .map(({ key, count, label, value }) => (
-                                <div key={key} className="flex items-center justify-between p-2.5 bg-neutral-900/60 rounded-lg text-sm">
-                                  <span className="text-neutral-300">{label}</span>
-                                  <div className="text-right">
-                                    <span className="font-semibold text-white">{count} élément{count > 1 ? 's' : ''}</span>
-                                    {value != null && value > 0 && (
-                                      <span className="ml-2 text-xs text-neutral-500">({formatMoney(value)})</span>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            {placementsMontant > 0 && (
-                              <div className="flex items-center justify-between p-2.5 bg-neutral-700/50 rounded-lg text-sm border border-neutral-600">
-                                <span className="text-yellow-300 font-medium">Total placements</span>
-                                <span className="font-bold text-white">{formatMoney(placementsMontant)}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Autres biens */}
-                      {patrimoineSections.filter(s =>
-                        ['nb_biens_divers', 'nb_autres_biens', 'nb_vehicules',
-                         'nb_biens_mobiliers_valeur'].includes(s.key)
-                      ).length > 0 && (
-                        <div className="mb-4">
-                          <h5 className="text-sm font-semibold text-neutral-300 mb-2 flex items-center gap-1.5">
-                            <Package size={14} className="text-orange-500" />
-                            Autres biens
-                          </h5>
-                          <div className="space-y-2">
-                            {patrimoineSections
-                              .filter(s =>
-                                ['nb_biens_divers', 'nb_autres_biens', 'nb_vehicules',
-                                 'nb_biens_mobiliers_valeur'].includes(s.key)
-                              )
-                              .map(({ key, count, label, value }) => (
-                                <div key={key} className="flex items-center justify-between p-2.5 bg-neutral-900/60 rounded-lg text-sm">
-                                  <span className="text-neutral-300">{label}</span>
-                                  <div className="text-right">
-                                    <span className="font-semibold text-white">{count} élément{count > 1 ? 's' : ''}</span>
-                                    {value != null && value > 0 && (
-                                      <span className="ml-2 text-xs text-neutral-500">({formatMoney(value)})</span>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Dettes */}
-                      {patrimoineSections.filter(s => s.key === 'nb_dettes').length > 0 && (
-                        <div className="mb-4">
-                          <h5 className="text-sm font-semibold text-neutral-300 mb-2 flex items-center gap-1.5">
-                            <AlertTriangle size={14} className="text-red-500" />
-                            Passif
-                          </h5>
-                          <div className="space-y-2">
-                            {patrimoineSections
-                              .filter(s => s.key === 'nb_dettes')
-                              .map(({ key, count, label, value }) => (
-                                <div key={key} className="flex items-center justify-between p-2.5 bg-yellow-900/30 rounded-lg text-sm border border-yellow-800">
-                                  <span className="text-yellow-300">{label}</span>
-                                  <div className="text-right">
-                                    <span className="font-semibold text-yellow-200">{count} élément{count > 1 ? 's' : ''}</span>
-                                    {value != null && value > 0 && (
-                                      <span className="ml-2 text-xs text-yellow-400">({formatMoney(value)})</span>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Revenus déclarés */}
-                      {patrimoineSections.filter(s => s.key === 'nb_revenus').length > 0 && (
-                        <div className="mb-4">
-                          <h5 className="text-sm font-semibold text-neutral-300 mb-2 flex items-center gap-1.5">
-                            <Receipt size={14} className="text-green-500" />
-                            Revenus déclarés
-                          </h5>
-                          <div className="space-y-2">
-                            {patrimoineSections
-                              .filter(s => s.key === 'nb_revenus')
-                              .map(({ key, count, label, value }) => (
-                                <div key={key} className="flex items-center justify-between p-2.5 bg-neutral-900/60 rounded-lg text-sm">
-                                  <span className="text-neutral-300">{label}</span>
-                                  <div className="text-right">
-                                    <span className="font-semibold text-white">{count} source{count > 1 ? 's' : ''}</span>
-                                    {value != null && value > 0 && (
-                                      <span className="ml-2 text-xs text-neutral-500">({formatMoney(value)})</span>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Declarations d'interets */}
-                  {interetsSections.length > 0 && (
-                    <div>
-                      <h4 className="text-base font-semibold text-neutral-200 mb-3 flex items-center gap-2 border-b pb-2">
-                        <Briefcase size={16} className="text-red-500" />
-                        Intérêts et activités déclarés
-                      </h4>
-                      <div className="space-y-2">
-                        {interetsSections.map(({ key, count, label }) => (
-                          <div key={key} className="flex items-center justify-between p-2.5 bg-neutral-900/60 rounded-lg text-sm">
-                            <span className="text-neutral-300">{label}</span>
-                            <span className="font-semibold text-white">{count} élément{count > 1 ? 's' : ''}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Détails activités (entreprises, rémunérations) */}
-                  {/* Note source */}
-                  <div className="text-xs text-neutral-500 pt-2 border-t border-neutral-700">
-                    {t('profil.note_source', lang)}
-                    {elu.liens.hatvp && (
-                      <>
-                        {' '}{t('profil.see_full', lang)}{' '}
-                        <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline text-yellow-400">
-                          {t('profil.fiche_hatvp', lang)}
-                        </a>
-                      </>
-                    )}
-                  </div>
-                </motion.div>
-              )}
+              {/* Source note */}
+              <div className="text-xs text-neutral-500 pt-3 mt-3 border-t border-neutral-700">
+                {t('profil.note_source', lang)}
+                {elu.liens.hatvp && (
+                  <>
+                    {' '}{t('profil.see_full', lang)}{' '}
+                    <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline text-yellow-400">
+                      {t('profil.fiche_hatvp', lang)}
+                    </a>
+                  </>
+                )}
+              </div>
             </motion.div>
           )}
 
@@ -836,7 +741,7 @@ export default function ProfilPage() {
             />
           )}
 
-          {/* Mandats */}
+          {/* Mandats et Fonctions — current and past */}
           {elu.mandats && elu.mandats.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -846,19 +751,69 @@ export default function ProfilPage() {
             >
               <h3 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center gap-2">
                 <Briefcase size={20} className="text-red-500" />
-                Mandats et Fonctions
+                {t('profil.mandats', lang)}
               </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
-                {elu.mandats.map((mandat, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center gap-3 p-3 bg-neutral-900/60 rounded-lg"
-                  >
-                    <div className="w-2 h-2 bg-red-500 rounded-full flex-shrink-0" />
-                    <span className="text-sm text-neutral-300">{mandat}</span>
-                  </div>
-                ))}
-              </div>
+
+              {/* Current vs past mandats */}
+              {(() => {
+                const { current: currentMandats, past: pastMandats } = categorizeMandats(
+                  elu.mandats,
+                  elu.fonction,
+                  elu.hatvp?.details_mandats as { mandat?: string; organisme?: string; date_fin?: string }[] | undefined
+                );
+
+                return (
+                  <>
+                    {currentMandats.length > 0 && (
+                      <div className="mb-4">
+                        <h4 className="text-sm font-semibold text-green-400 mb-2">Actuels</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+                          {currentMandats.map((mandat, index) => (
+                            <div
+                              key={index}
+                              className="flex items-center gap-3 p-3 bg-neutral-900/60 rounded-lg"
+                            >
+                              <div className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0" />
+                              <span className="text-sm text-neutral-300">{mandat}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {pastMandats.length > 0 && (
+                      <div>
+                        <button
+                          onClick={() => setShowPastMandats(!showPastMandats)}
+                          className="flex items-center gap-2 text-sm font-semibold text-neutral-400 hover:text-neutral-200 transition-colors mb-2"
+                        >
+                          {showPastMandats ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                          Passés ({pastMandats.length})
+                        </button>
+                        {showPastMandats && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            transition={{ duration: 0.2 }}
+                          >
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+                              {pastMandats.map((mandat, index) => (
+                                <div
+                                  key={index}
+                                  className="flex items-center gap-3 p-3 bg-neutral-900/40 rounded-lg"
+                                >
+                                  <div className="w-2 h-2 bg-neutral-500 rounded-full flex-shrink-0" />
+                                  <span className="text-sm text-neutral-400">{mandat}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </motion.div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </motion.div>
           )}
 

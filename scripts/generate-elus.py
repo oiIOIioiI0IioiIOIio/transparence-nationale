@@ -599,6 +599,55 @@ SECTION_LABELS = {
 }
 
 
+# Financial field names used for deduplication (not part of the identity of an item)
+_FINANCIAL_DEDUP_FIELDS = {
+    "valeur_euro", "solde_euro", "montant_euro", "valeur", "solde", "montant",
+    "valeurParts", "capitalRestantDu", "remuneration_euro", "indemnite_euro",
+    "valeurVenale", "prixAcquisition", "valeurDeclaree", "valeurEstimee",
+    "montantAnnuel", "montantTotal", "montantBrut", "montantNet",
+}
+
+
+def _item_dedup_key(item: dict) -> str:
+    """Build a deduplication key from an item's non-financial string fields."""
+    parts = []
+    for k, v in sorted(item.items()):
+        if k in _FINANCIAL_DEDUP_FIELDS or k.startswith("_"):
+            continue
+        if v is None or v == "":
+            continue
+        parts.append(f"{k}:{str(v).strip().lower()}")
+    return "|".join(parts)
+
+
+def deduplicate_section_items(items: list[dict]) -> list[dict]:
+    """Remove duplicate items from a section, keeping the one with the highest financial value."""
+    if not items or len(items) <= 1:
+        return items
+    seen: dict[str, dict] = {}
+    for item in items:
+        key = _item_dedup_key(item)
+        if not key:
+            # Items with no identifying fields — keep all
+            seen[f"__empty_{len(seen)}"] = item
+            continue
+        existing = seen.get(key)
+        if existing is None:
+            seen[key] = item
+        else:
+            # Keep the one with a higher financial value
+            def _max_fin(d: dict) -> float:
+                mx = 0.0
+                for f in _FINANCIAL_DEDUP_FIELDS:
+                    v = d.get(f)
+                    if isinstance(v, (int, float)):
+                        mx = max(mx, abs(v))
+                return mx
+            if _max_fin(item) > _max_fin(existing):
+                seen[key] = item
+    return list(seen.values())
+
+
 def extract_declaration_data(decl_element: ET.Element) -> dict:
     """
     Extraire TOUTES les données d'un élément <declaration> XML
@@ -727,6 +776,11 @@ def fetch_data_for_elu(
                 "organe":     parsed.get("organe", ""),
             })
 
+        # Deduplicate items across declarations
+        for section_name in list(result.keys()):
+            if isinstance(result.get(section_name), list) and section_name not in ("declarations",):
+                result[section_name] = deduplicate_section_items(result[section_name])
+
         return result
 
     # ── Stratégie 2 : XMLs individuels via le CSV ─────────────────────────────
@@ -800,6 +854,11 @@ def fetch_data_for_elu(
             "organe":     parsed.get("organe", ""),
         })
         fetched_types.add(category)
+
+    # Deduplicate items across declarations
+    for section_name in list(result.keys()):
+        if isinstance(result.get(section_name), list) and section_name not in ("declarations",):
+            result[section_name] = deduplicate_section_items(result[section_name])
 
     return result
 
@@ -982,6 +1041,7 @@ def build_resume_hatvp(data: dict) -> dict:
                 "description": item.get("description") or item.get("description_label") or "",
                 "nature": item.get("nature") or item.get("nature_label") or item.get("typeBien") or item.get("typeBien_label") or "",
                 "lieu": item.get("lieu") or item.get("localisation") or item.get("commune") or item.get("commune_label") or item.get("adresse") or "",
+                "departement": item.get("departement") or item.get("departement_label") or item.get("codeDepartement") or "",
                 "surface": item.get("surface") or item.get("surfaceBien") or "",
                 "mode_acquisition": item.get("modeAcquisition") or item.get("modeAcquisition_label") or item.get("modeDetention") or item.get("modeDetention_label") or "",
                 "date_acquisition": item.get("dateAcquisition") or item.get("anneeAcquisition") or "",
@@ -1294,6 +1354,7 @@ def build_full_detail_hatvp(data: dict) -> dict:
             "description": item.get("description") or item.get("description_label") or "",
             "nature": item.get("nature") or item.get("nature_label") or item.get("typeBien") or item.get("typeBien_label") or "",
             "lieu": item.get("lieu") or item.get("localisation") or item.get("commune") or item.get("commune_label") or item.get("adresse") or "",
+            "departement": item.get("departement") or item.get("departement_label") or item.get("codeDepartement") or "",
             "surface": item.get("surface") or item.get("surfaceBien") or "",
             "mode_acquisition": item.get("modeAcquisition") or item.get("modeAcquisition_label") or item.get("modeDetention") or item.get("modeDetention_label") or "",
             "date_acquisition": item.get("dateAcquisition") or item.get("anneeAcquisition") or "",
@@ -1614,13 +1675,25 @@ def enrich_elus_from_csv(elus: list[dict], csv_index: list[dict]) -> None:
                 })
 
         if mandats_set:
-            elu["mandats"] = sorted(mandats_set)
+            # Merge with existing mandats to avoid losing data
+            existing_mandats = set(elu.get("mandats", []))
+            elu["mandats"] = sorted(existing_mandats | mandats_set)
 
         if types_mandat_set:
-            elu["types_mandat"] = sorted(types_mandat_set)
+            # Merge with existing types_mandat
+            existing_types = set(elu.get("types_mandat", []))
+            elu["types_mandat"] = sorted(existing_types | types_mandat_set)
 
         if declarations_info:
-            elu["declarations_csv"] = declarations_info[:10]  # Limiter à 10
+            # Merge with existing declarations_csv, avoiding duplicates
+            existing_decls = elu.get("declarations_csv", [])
+            existing_keys = {(d.get("type", ""), d.get("date_publication", "")) for d in existing_decls}
+            for di in declarations_info:
+                k = (di.get("type", ""), di.get("date_publication", ""))
+                if k not in existing_keys:
+                    existing_decls.append(di)
+                    existing_keys.add(k)
+            elu["declarations_csv"] = existing_decls[:10]  # Limiter à 10
 
         # Lien HATVP depuis url_dossier
         for row in rows:
