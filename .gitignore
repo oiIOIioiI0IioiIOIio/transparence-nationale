@@ -42,6 +42,11 @@ env/
 venv/
 ENV/
 
+# HATVP cache (large downloaded files — not committed)
+public/data/hatvp_cache/declarations.xml
+public/data/hatvp_cache/xmls/
+public/data/hatvp_cache/pdfs/
+
 # IDE
 .idea
 .vscode

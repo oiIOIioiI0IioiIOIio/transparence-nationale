@@ -1,0 +1,46 @@
+{
+  "source": "pdf",
+  "pdf_path": "public/attal-gabriel-dia30320-depute-92.pdf",
+  "parsed_at": "2026-03-07T12:58:38.367355+00:00",
+  "extraction_method": "pdfplumber",
+  "raw_text_length": 4402,
+  "sections_found": [
+    "revenus",
+    "participations_financieres",
+    "activites_professionnelles",
+    "mandats_electifs"
+  ],
+  "type_detected": "unknown",
+  "revenus": [
+    {
+      "description": "Description | Rémunération, indemnité ou gratification [Fonction conservée] Conseiller municipal de 01/2019 à 09/2024 Commentaire : fonction en cours | 2019 : 600 € Net 2020 : 600 € Net 2021 : 600 € Net 2022 : 600 € Net 2023 : 600 € Net 2024 : 600 € Net Nom | Description des autres activités professionnelles exercées Néant |",
+      "montant_euro": 600.0,
+      "montants_details": [
+        600.0,
+        600.0,
+        600.0,
+        600.0,
+        600.0,
+        600.0,
+        600.0,
+        600.0,
+        600.0,
+        600.0,
+        600.0,
+        600.0
+      ]
+    }
+  ],
+  "summary": {
+    "patrimoine_brut_euro": 0.0,
+    "patrimoine_net_euro": 0.0,
+    "immobilier_euro": 0.0,
+    "placements_euro": 0.0,
+    "instruments_euro": 0.0,
+    "participations_euro": 0.0,
+    "vehicules_euro": 0.0,
+    "biens_mobiliers_euro": 0.0,
+    "dettes_euro": 0.0,
+    "revenus_euro": 600.0
+  }
+}
