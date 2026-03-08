@@ -221,12 +221,15 @@ function computeYearlyRevenues(
   processItems(detailsMandats);
 
   let lastYear: string | null = null;
+  let lastYearNum = 0;
   let lastYearTotal = 0;
   let grandTotal = 0;
 
   for (const [year, total] of yearTotals.entries()) {
     grandTotal += total;
-    if (!lastYear || year > lastYear) {
+    const yearNum = parseInt(year, 10) || 0;
+    if (yearNum > lastYearNum) {
+      lastYearNum = yearNum;
       lastYear = year;
       lastYearTotal = total;
     }
