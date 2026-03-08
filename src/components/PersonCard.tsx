@@ -23,7 +23,7 @@ export default function PersonCard({ elu, index }: PersonCardProps) {
   };
 
   const hasFinancialData = (elu.patrimoine || 0) > 0 || (elu.revenus || 0) > 0;
-  const nbDeclarations = elu.hatvp?.nb_declarations_hatvp || elu.declarations_csv?.length || 0;
+  const nbDeclarations = elu.hatvp?.nb_declarations_hatvp || elu.nb_declarations_csv || elu.declarations_csv?.length || 0;
 
   return (
     <motion.div

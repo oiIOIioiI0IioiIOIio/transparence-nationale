@@ -94,6 +94,9 @@ jobs:
         if: github.event.inputs.process_pdfs == 'true'
         run: python scripts/parse_pdf.py --merge-to-main
 
+      - name: Réorganiser les données (slim elus.json + fichiers individuels)
+        run: python scripts/generate-elus.py --reorganize
+
       - name: Vérifier les changements
         id: check_changes
         run: |

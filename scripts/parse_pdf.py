@@ -94,6 +94,36 @@ TABLE_HEADER_PATTERNS = [
     r"^(?:Conjoint|Nom et objet|ou de la personne|et responsabilités)$",
     r"^(?:Description des activités|Description des autres|professionnelles exercées)$",
     r"^(?:Activité professionnelle)$",
+    r"^(?:Rémunération,?\s*indemnité)$",
+    r"^(?:Rémunération,?\s*indemnité\s*Description\s*ou\s*gratification)$",
+    r"^(?:Conjoint,?\s*partenaire\s+lié\s+par\s+PACS\s+ou\s+concubin)$",
+    r"^(?:Commentaire\s*:\s*Page\s+\d+/\d+\s+D[IA]+/.*)$",
+]
+
+# Lines to strip from section text during cleaning (DIA table header fragments, page footers, doc IDs)
+DIA_NOISE_PATTERNS = [
+    r"^\d+°\s+.*(?:exerc[ée]es?|d[ée]clar[ée]es?|d[ée]tenues?).*$",  # numbered section title lines
+    r"^Rémunération,?\s*indemnité.*$",
+    r"^Description\s*$",
+    r"^ou\s+gratification\s*$",
+    r"^Rémunération\s*$",
+    r"^Rémunération\s+ou\s*$",
+    r"^gratification\s+perçue\s+au\s*$",
+    r"^cours\s+de\s+l'année\s+précédente\s*$",
+    r"^Conjoint,?\s*partenaire\s+lié\s+par\s+PACS\s+ou\s+concubin\s*$",
+    r"^Activité\s+professionnelle\s*$",
+    r"^Nom\s+et\s+objet\s+social\s+de\s+la\s+structure\s*$",
+    r"^ou\s+de\s+la\s+personne\s+morale\s*$",
+    r"^Description\s+des\s+activités\s*$",
+    r"^Description\s+des\s+autres\s+activités\s*$",
+    r"^et\s+responsabilités\s+exercées\s*$",
+    r"^professionnelles\s+exercées\s*$",
+    r"^Nom\s*$",
+    r"^Page\s+\d+/\d+\s*$",
+    r"^Page\s+\d+/\d+\s+D[IA]+/.*$",
+    r"^D[IA]+/[A-Z].*$",                   # document IDs like "DI/ABADIE-Muriel"
+    r"^Commentaire\s*:\s*Page\s+\d+/\d+\s+D[IA]+/.*$",
+    r"^Commentaire\s*:\s*$",
 ]
 
 
@@ -402,6 +432,33 @@ def _is_table_header(line: str) -> bool:
     return False
 
 
+def _clean_section_text(text: str) -> str:
+    """Remove DIA table headers, page footers, and document IDs from section text.
+    This prevents noise like 'Rémunération, indemnité Description ou gratification'
+    or 'Commentaire : Page 2/3 DI/ABADIE-Muriel' from polluting extracted data."""
+    lines = text.split("\n")
+    cleaned = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            cleaned.append(line)
+            continue
+        is_noise = False
+        for pat in DIA_NOISE_PATTERNS:
+            if re.match(pat, stripped, re.IGNORECASE):
+                is_noise = True
+                break
+        if not is_noise:
+            cleaned.append(line)
+    result = "\n".join(cleaned)
+    # Also remove inline page footers and document references
+    result = re.sub(r"Page\s+\d+/\d+\s+D[IA]+/[A-Z][^\n]*", "", result)
+    result = re.sub(r"Page\s+\d+/\d+\s*$", "", result, flags=re.MULTILINE)
+    # Remove trailing whitespace lines
+    result = re.sub(r"\n\s*\n\s*\n", "\n\n", result)
+    return result.strip()
+
+
 def _split_dia_numbered(text: str) -> dict[str, str] | None:
     """Split DIA format text by numbered sections (1°, 2°, etc.).
     Returns {section_name: section_text} or None if not DIA format."""
@@ -439,6 +496,8 @@ def _split_dia_numbered(text: str) -> dict[str, str] | None:
         section_text = text[start:end].strip()
         # Remove page footers like "Page 2/3"
         section_text = re.sub(r'\nPage\s+\d+/\d+\s*$', '', section_text)
+        # Clean DIA table headers and noise from section text
+        section_text = _clean_section_text(section_text)
         sections[section_name] = section_text
 
     # Add observations
@@ -667,16 +726,26 @@ def _extract_mandat_electif_items(text: str) -> list[dict]:
     """Extract elective mandate data from DIA section 7°."""
     items = []
 
+    # Clean the text first: remove DIA table header noise
+    text = _clean_section_text(text)
+
+    # Remove the section title line (7° Les fonctions et mandats électifs...)
+    text = re.sub(r'^\s*7°\s+.*?\n', '', text, count=1)
+
     # Look for mandate entries — typically start with a function name or [Fonction conservée]
-    # Split on "[Fonction conservée]" or similar markers
+    # Split on "[Fonction conservée]" or similar markers, or "depuis le" blocks
     blocks = re.split(r'(?=\[Fonction\s+conserv[ée]e\]|\[Fonction\s+nouvelle\])', text)
     if len(blocks) <= 1:
-        # Try splitting by "Employeur" or by paragraph
-        blocks = [text]
+        # Try splitting on double newlines (paragraph breaks)
+        para_blocks = re.split(r'\n\s*\n', text)
+        if len(para_blocks) > 1:
+            blocks = [b for b in para_blocks if b.strip()]
+        else:
+            blocks = [text]
 
     for block in blocks:
         block = block.strip()
-        if not block or len(block) < 10:
+        if not block or len(block) < 5:
             continue
         if _section_is_neant(block):
             continue
@@ -689,30 +758,39 @@ def _extract_mandat_electif_items(text: str) -> list[dict]:
         elif re.search(r'\[Fonction\s+nouvelle\]', block):
             item['statut'] = 'Fonction nouvelle'
 
-        # Extract mandate name (e.g., "Conseiller municipal")
+        # Extract mandate name (e.g., "Conseiller municipal", "Maire", etc.)
         for pattern in [
-            r"(?m)^((?:Conseill|D[ée]put|S[ée]nat|Maire|Pr[ée]sident|Vice)[^\n]*)",
+            r"(?m)^((?:Conseill|D[ée]put|S[ée]nat|Maire|Pr[ée]sident|Vice|Adjoint|Membre)[^\n]*)",
         ]:
             fm = re.search(pattern, block)
             if fm and 'mandat' not in item:
                 mandat_text = _clean_text(fm.group(1))
-                # Remove trailing year:amount patterns
+                # Remove trailing year:amount patterns and noise
                 mandat_text = re.sub(r'\s+\d{4}\s*:\s*\d[\d\s]*€.*$', '', mandat_text).strip()
+                mandat_text = re.sub(r'\s+Net\s*$', '', mandat_text).strip()
+                mandat_text = re.sub(r'\s+depuis\s+le\s+\d{1,2}/\d{4}.*$', '', mandat_text).strip()
                 if mandat_text:
                     item['mandat'] = mandat_text
+
+        # Extract "depuis le MM/YYYY" as start date
+        depuis_match = re.search(r'depuis\s+le\s+(\d{1,2}/\d{4})', block)
+        if depuis_match:
+            item['date_debut'] = depuis_match.group(1)
 
         # Extract period
         period_match = re.search(r'de\s+(\d{1,2}/\d{4})\s+à\s+(\d{1,2}/\d{4})', block)
         if period_match:
             item['periode'] = f"{period_match.group(1)} à {period_match.group(2)}"
 
-        # Extract comment (in mandats section)
+        # Extract comment — but filter out page footers and doc IDs
         comment_match = re.search(r'Commentaire\s*:\s*(.+?)(?:\n|$)', block)
         if comment_match:
             comment = _clean_text(comment_match.group(1))
             # Remove trailing year:amount patterns
             comment = re.sub(r'\s+\d{4}\s*:\s*\d[\d\s]*€.*$', '', comment).strip()
-            if comment:
+            # Remove page footer references
+            comment = re.sub(r'\s*Page\s+\d+/\d+\s*D[IA]+/.*$', '', comment).strip()
+            if comment and not re.match(r'^Page\s+\d+/\d+', comment):
                 item['commentaire'] = comment
 
         # Extract year-by-year revenues
@@ -731,7 +809,9 @@ def _extract_mandat_electif_items(text: str) -> list[dict]:
             item['montant_euro'] = sum(ys['montant'] for ys in year_salaries)
 
         if item and any(v for k, v in item.items() if k != 'description'):
-            item['description'] = _clean_text(block[:500])
+            # Clean description: remove table header noise
+            desc = _clean_section_text(block[:500])
+            item['description'] = _clean_text(desc)
             items.append(item)
 
     return items
@@ -753,6 +833,9 @@ def extract_section_items(section_text: str, section_name: str) -> list[dict]:
     # Check for "Néant" sections first
     if _section_is_neant(section_text):
         return []
+
+    # Clean DIA table header noise from section text before processing
+    section_text = _clean_section_text(section_text)
 
     items = []
     amounts = find_amounts_in_text(section_text)
@@ -1048,6 +1131,11 @@ def _extract_activites_fields(text: str, item: dict) -> None:
 
 def _extract_conjoint_fields(text: str, item: dict) -> None:
     """Extract spouse activity fields."""
+    # Clean the text first: remove DIA table headers and page footers
+    text = _clean_section_text(text)
+    # Remove the section title line (5° Les activités professionnelles...)
+    text = re.sub(r'^\s*5°\s+.*?\n', '', text, count=1)
+
     # Profession / activité
     for pattern in [
         r"(?i)(?:profession|activit[ée]|m[ée]tier)\s*[:;]\s*(.+?)(?:\s*[,\n]|$)",
@@ -1055,14 +1143,19 @@ def _extract_conjoint_fields(text: str, item: dict) -> None:
     ]:
         m = re.search(pattern, text)
         if m:
-            item["profession_conjoint"] = _clean_text(m.group(1)[:200])
+            val = _clean_text(m.group(1)[:200])
+            # Filter out noise values
+            if val and val.lower() not in ("néant", "neant"):
+                item["profession_conjoint"] = val
             break
 
     # Employer
     emp_match = re.search(r"(?i)employeur\s*[:;]\s*(.+?)(?:\n|$)", text)
     if emp_match:
         employer = _clean_text(emp_match.group(1).strip())
-        if employer:
+        # Remove page footer that may be appended
+        employer = re.sub(r'\s*Page\s+\d+/\d+\s*D[IA]+/.*$', '', employer).strip()
+        if employer and employer.lower() not in ("néant", "neant"):
             item["employeur_conjoint"] = employer
 
     # Company name

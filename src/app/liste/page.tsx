@@ -24,6 +24,7 @@ function selectFeatured(elus: Elu[]): Elu[] {
     if (elu.photo_url) score += 15;
     if (elu.photo && elu.photo !== '/photos/placeholder.jpg') score += 15;
     if (elu.declarations_csv && elu.declarations_csv.length > 0) score += elu.declarations_csv.length * 3;
+    else if (elu.nb_declarations_csv && elu.nb_declarations_csv > 0) score += elu.nb_declarations_csv * 3;
     if (elu.hatvp?.nb_declarations_hatvp) score += elu.hatvp.nb_declarations_hatvp * 2;
     if (elu.mandats && elu.mandats.length > 1) score += 5;
     // Bonus pour mandats nationaux
