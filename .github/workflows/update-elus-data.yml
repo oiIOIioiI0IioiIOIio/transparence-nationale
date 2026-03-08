@@ -7,8 +7,17 @@ on:
         description: "Nombre d'élus à générer (vide = tous)"
         required: false
         default: ""
+      save_every:
+        description: "Sauvegarder tous les N élus (défaut 100)"
+        required: false
+        default: "100"
   schedule:
     - cron: "0 6 1 * *"
+
+# Prevent overlapping runs from corrupting data
+concurrency:
+  group: update-elus-data
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -16,6 +25,7 @@ permissions:
 jobs:
   update-data:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
 
     steps:
       - name: Checkout
@@ -39,24 +49,41 @@ jobs:
       - name: Installer les dépendances
         run: pip install -r scripts/requirements.txt
 
-      - name: Générer les données élus
+      - name: "📥 Générer les données élus"
         run: |
+          FLAGS="--save-every ${{ github.event.inputs.save_every || '100' }}"
           if [ -n "${{ github.event.inputs.limit }}" ]; then
-            python scripts/generate-elus.py --limit "${{ github.event.inputs.limit }}"
-          else
-            python scripts/generate-elus.py
+            FLAGS="$FLAGS --limit ${{ github.event.inputs.limit }}"
           fi
+          python scripts/generate-elus.py $FLAGS
 
-      - name: Enrichir les métadonnées depuis le CSV
+      - name: "📋 Enrichir les métadonnées depuis le CSV"
         run: python scripts/generate-elus.py --enrich-csv-only
 
-      - name: Réorganiser les données (slim elus.json + fichiers individuels)
+      - name: "💾 Commit intermédiaire"
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/data/elus.json
+          git add -f public/data/elus/ 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            COUNT=$(python3 -c "import json; d=json.load(open('public/data/elus.json')); print(len(d))")
+            git commit -m "🗳️ Checkpoint données — $(date -u +'%H:%M UTC') (${COUNT} élus)"
+            git pull --rebase
+            git push
+            echo "::notice ::💾 Checkpoint commité (${COUNT} élus)"
+          fi
+
+      - name: "📂 Réorganiser les données (slim elus.json + fichiers individuels)"
         run: python scripts/generate-elus.py --reorganize
 
-      - name: Vérifier les changements
+      - name: "🔍 Vérifier les changements"
         id: check_changes
         run: |
-          if git diff --quiet public/data/elus.json public/data/elus/; then
+          # Stage everything to detect both modified AND new files
+          git add public/data/elus.json 2>/dev/null || true
+          git add -f public/data/elus/ 2>/dev/null || true
+          if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -64,20 +91,20 @@ jobs:
             echo "count=$COUNT" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Commit et push
+      - name: "🚀 Commit et push"
         if: steps.check_changes.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           DATE=$(date -u +"%Y-%m-%d")
           COUNT=${{ steps.check_changes.outputs.count }}
-          git add public/data/elus.json
-          git add -f public/data/elus/
+          # Files already staged by check_changes step
           git commit -m "🗳️ Mise à jour données élus — ${DATE} (${COUNT} élus)"
           git pull --rebase
           git push
 
-      - name: Résumé
+      - name: "📊 Résumé"
+        if: always()
         run: |
           if [ "${{ steps.check_changes.outputs.changed }}" == "true" ]; then
             echo "## ✅ Données mises à jour" >> "$GITHUB_STEP_SUMMARY"

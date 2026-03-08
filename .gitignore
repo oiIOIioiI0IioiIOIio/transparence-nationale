@@ -46,6 +46,7 @@ ENV/
 public/data/hatvp_cache/declarations.xml
 public/data/hatvp_cache/xmls/
 public/data/hatvp_cache/pdfs/
+public/data/progress.json
 
 # IDE
 .idea

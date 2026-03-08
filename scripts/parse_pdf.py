@@ -40,14 +40,17 @@ import unicodedata
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from progress import BatchProgress
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 OUTPUT_JSON = os.path.join(PROJECT_ROOT, "public", "data", "elus.json")
+ELUS_DETAIL_DIR = os.path.join(PROJECT_ROOT, "public", "data", "elus")
 CACHE_DIR = os.path.join(PROJECT_ROOT, "public", "data", "hatvp_cache")
 PDF_CACHE_DIR = os.path.join(CACHE_DIR, "pdfs")
 PDF_DECLARATIONS_DIR = os.path.join(PROJECT_ROOT, "public", "data", "pdf_declarations")
+PROGRESS_JSON = os.path.join(PROJECT_ROOT, "public", "data", "progress.json")
 PDF_MERGED_JSON = os.path.join(PDF_DECLARATIONS_DIR, "pdf_merged.json")
 INDEX_CACHE = os.path.join(CACHE_DIR, "liste.csv")
 
@@ -156,6 +159,8 @@ def parse_args():
                    help="Process a local PDF, save result to public/data/pdf_declarations/")
     p.add_argument("--merge-to-main", action="store_true",
                    help="Merge all PDFs in pdf_declarations/ into elus.json")
+    p.add_argument("--save-every", type=int, default=100,
+                   help="Save individual JSONs + elus.json every N elus (default 100)")
     return p.parse_args()
 
 
@@ -1809,6 +1814,37 @@ def save_elus(elus: list[dict]) -> None:
     print(f"✓ {OUTPUT_JSON} updated ({len(elus)} elus)")
 
 
+def _flush_pending_updates(pending_ids: dict[str, dict]) -> None:
+    """Apply pending PDF updates to elus.json and individual JSON files.
+
+    For individual JSONs, merges PDF data into the EXISTING file (which may
+    contain full XML detail data) rather than overwriting with data from
+    elus.json (which may be slim). This preserves full detail data.
+    """
+    all_elus = load_elus()
+    os.makedirs(ELUS_DETAIL_DIR, exist_ok=True)
+    for e in all_elus:
+        eid = e.get("id")
+        if eid in pending_ids:
+            update_elu_with_pdf_data(e, pending_ids[eid])
+            # Merge PDF data into existing individual JSON (preserves full data)
+            out_path = os.path.join(ELUS_DETAIL_DIR, f"{eid}.json")
+            individual = e  # fallback: use elus.json entry
+            if os.path.exists(out_path):
+                try:
+                    with open(out_path, "r", encoding="utf-8") as f:
+                        individual = json.load(f)
+                    # Apply PDF data to the full individual data
+                    update_elu_with_pdf_data(individual, pending_ids[eid])
+                except (json.JSONDecodeError, OSError):
+                    print(f"    ⚠ Could not read existing {eid}.json, using elus.json entry")
+                    pass  # fall back to elus.json entry
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(individual, f, ensure_ascii=False, separators=(",", ":"))
+    save_elus(all_elus)
+    print(f"  ✓ Saved {len(pending_ids)} individual JSONs + elus.json")
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Main
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1922,10 +1958,19 @@ def main():
         candidates = candidates[:args.limit]
 
     total = len(candidates)
+    save_every = args.save_every
+    bp = BatchProgress(
+        "📄 PDF Processing",
+        total=total,
+        save_interval=save_every,
+        progress_json_path=PROGRESS_JSON,
+    )
+
     processed = 0
     updated_count = 0
     failed = 0
-    updated_ids: dict[str, dict] = {}
+    # Buffer of updates accumulated since last checkpoint save
+    pending_ids: dict[str, dict] = {}
 
     for i, elu in enumerate(candidates, 1):
         prenom = elu.get("prenom", "")
@@ -1944,46 +1989,52 @@ def main():
         if result is None:
             failed += 1
             print(f"  ✗ No PDF declarations found")
-            continue
-
-        processed += 1
-        summary = result.get("summary", {})
-        patrimoine = summary.get("patrimoine_brut_euro", 0)
-        revenus = summary.get("revenus_euro", 0)
-        sections = result.get("sections_found", []) if isinstance(result.get("sections_found"), list) else []
-        has_section_data = any(
-            result.get(sec) for sec in SECTION_PATTERNS
-        )
-
-        # Save results when ANY useful data is extracted (not just patrimoine)
-        if patrimoine > 0 or revenus > 0 or has_section_data:
-            updated_count += 1
-            updated_ids[elu_id] = result
-            parts = []
-            if patrimoine > 0:
-                parts.append(f"Patrimoine: {patrimoine:,.0f} €")
-            if revenus > 0:
-                parts.append(f"Revenus: {revenus:,.0f} €")
-            if has_section_data:
-                section_names = [sec for sec in SECTION_PATTERNS if result.get(sec)]
-                parts.append(f"Sections: {', '.join(section_names)}")
-            print(f"  ✓ {' | '.join(parts)}")
+            is_checkpoint = bp.tick(failed=True)
         else:
-            print(f"  ○ PDF parsed but no data extracted")
+            processed += 1
+            summary = result.get("summary", {})
+            patrimoine = summary.get("patrimoine_brut_euro", 0)
+            revenus = summary.get("revenus_euro", 0)
+            has_section_data = any(
+                result.get(sec) for sec in SECTION_PATTERNS
+            )
 
-        # Save detailed result
-        if not args.dry_run:
-            detail_path = os.path.join(CACHE_DIR, f"{elu_id}_pdf.json")
-            with open(detail_path, "w", encoding="utf-8") as f:
-                json.dump(result, f, ensure_ascii=False, indent=2)
+            # Save results when ANY useful data is extracted (not just patrimoine)
+            if patrimoine > 0 or revenus > 0 or has_section_data:
+                updated_count += 1
+                pending_ids[elu_id] = result
+                parts = []
+                if patrimoine > 0:
+                    parts.append(f"Patrimoine: {patrimoine:,.0f} €")
+                if revenus > 0:
+                    parts.append(f"Revenus: {revenus:,.0f} €")
+                if has_section_data:
+                    section_names = [sec for sec in SECTION_PATTERNS if result.get(sec)]
+                    parts.append(f"Sections: {', '.join(section_names)}")
+                print(f"  ✓ {' | '.join(parts)}")
+            else:
+                print(f"  ○ PDF parsed but no data extracted")
 
-    # ── Update elus.json ─────────────────────────────────────────────────────
-    if not args.dry_run and updated_ids:
-        all_elus = load_elus()
-        for e in all_elus:
-            if e.get("id") in updated_ids:
-                update_elu_with_pdf_data(e, updated_ids[e["id"]])
-        save_elus(all_elus)
+            # Save detailed result
+            if not args.dry_run:
+                detail_path = os.path.join(CACHE_DIR, f"{elu_id}_pdf.json")
+                with open(detail_path, "w", encoding="utf-8") as f:
+                    json.dump(result, f, ensure_ascii=False, indent=2)
+
+            is_checkpoint = bp.tick(updated=(patrimoine > 0 or revenus > 0 or has_section_data))
+
+        # ── Incremental save every save_every elus ───────────────────────
+        if is_checkpoint and not args.dry_run and pending_ids:
+            print(f"\n💾 Checkpoint save ({i}/{total}) — {len(pending_ids)} pending updates…")
+            _flush_pending_updates(pending_ids)
+            pending_ids.clear()
+
+    # ── Final save of any remaining pending updates ──────────────────────────
+    if not args.dry_run and pending_ids:
+        print(f"\n💾 Final save — {len(pending_ids)} remaining updates…")
+        _flush_pending_updates(pending_ids)
+
+    bp.finish()
 
     print(f"\n{'=' * 65}")
     print("📊 FINAL REPORT")
