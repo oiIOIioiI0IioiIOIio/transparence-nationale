@@ -735,14 +735,14 @@ export default function ProfilPage() {
 
             {/* No financial data at all */}
             {!hasFinancialData && !hatvpSections.length && (
-              <div className="bg-yellow-900/30 border border-yellow-700 rounded-xl p-4 sm:p-6">
+              <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700 rounded-xl p-4 sm:p-6">
                 <div className="flex items-start gap-3">
-                  <Scale size={22} className="text-yellow-500 mt-0.5 flex-shrink-0" />
+                  <Scale size={22} className="text-yellow-600 dark:text-yellow-500 mt-0.5 flex-shrink-0" />
                   <div>
-                    <h3 className="text-base sm:text-lg font-semibold text-yellow-300 mb-1">
+                    <h3 className="text-base sm:text-lg font-semibold text-yellow-800 dark:text-yellow-300 mb-1">
                       {t('profil.no_financial', lang)}
                     </h3>
-                    <p className="text-xs sm:text-sm text-yellow-200/80">
+                    <p className="text-xs sm:text-sm text-yellow-700 dark:text-yellow-200/80">
                       {t('profil.no_financial.sub', lang)}
                       {elu.liens.hatvp && (
                         <>
@@ -826,18 +826,18 @@ export default function ProfilPage() {
                       <button
                         onClick={() => toggleSection('__revenus_annual')}
                         className={`w-full p-3 rounded-lg transition-colors cursor-pointer ${
-                          isRevenusExpanded ? 'bg-yellow-900/40 border border-yellow-700' : 'bg-yellow-900/30 border border-yellow-800 hover:bg-yellow-900/40'
+                          isRevenusExpanded ? 'bg-yellow-100 dark:bg-yellow-900/40 border border-yellow-300 dark:border-yellow-700' : 'bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800 hover:bg-yellow-100 dark:hover:bg-yellow-900/40'
                         }`}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            {isRevenusExpanded ? <ChevronUp size={14} className="text-yellow-500" /> : <ChevronDown size={14} className="text-yellow-500" />}
-                            <span className="text-sm font-semibold text-yellow-300">{summaryLabel}</span>
+                            {isRevenusExpanded ? <ChevronUp size={14} className="text-yellow-600 dark:text-yellow-500" /> : <ChevronDown size={14} className="text-yellow-600 dark:text-yellow-500" />}
+                            <span className="text-sm font-semibold text-yellow-800 dark:text-yellow-300">{summaryLabel}</span>
                           </div>
-                          <p className="text-lg font-bold text-yellow-200">{formatMoney(summaryAmount)}</p>
+                          <p className="text-lg font-bold text-yellow-900 dark:text-yellow-200">{formatMoney(summaryAmount)}</p>
                         </div>
                         {revenueByFunction.length > 1 && !isRevenusExpanded && (
-                          <p className="text-xs text-yellow-500 mt-1 text-left">{t('profil.click_detail_mandats', lang)}</p>
+                          <p className="text-xs text-yellow-600 dark:text-yellow-500 mt-1 text-left">{t('profil.click_detail_mandats', lang)}</p>
                         )}
                       </button>
                       {isRevenusExpanded && revenueByFunction.length > 0 && (
@@ -850,14 +850,14 @@ export default function ProfilPage() {
                           {revenueByFunction.map((rf, idx) => (
                             <div key={idx} className="p-2.5 bg-th-bg-secondary/80 rounded-lg text-sm border border-th-border/50 flex items-center justify-between">
                               <span className="text-th-text font-medium">{rf.label}</span>
-                              <span className="text-yellow-500 font-semibold">{formatMoney(rf.montant)}</span>
+                              <span className="text-yellow-700 dark:text-yellow-500 font-semibold">{formatMoney(rf.montant)}</span>
                             </div>
                           ))}
                           {/* Total across all years */}
                           {hasYearlyData && yearlyRevenues.grandTotal > lastYearRevenu && (
-                            <div className="p-2.5 bg-yellow-900/30 rounded-lg text-sm border border-yellow-800 flex items-center justify-between mt-2">
-                              <span className="text-yellow-300 font-semibold">{t('profil.total_all_years', lang)}</span>
-                              <span className="text-yellow-200 font-bold">{formatMoney(yearlyRevenues.grandTotal)}</span>
+                            <div className="p-2.5 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg text-sm border border-yellow-300 dark:border-yellow-800 flex items-center justify-between mt-2">
+                              <span className="text-yellow-800 dark:text-yellow-300 font-semibold">{t('profil.total_all_years', lang)}</span>
+                              <span className="text-yellow-900 dark:text-yellow-200 font-bold">{formatMoney(yearlyRevenues.grandTotal)}</span>
                             </div>
                           )}
                         </motion.div>
@@ -872,15 +872,15 @@ export default function ProfilPage() {
               {(totalActifBrut > 0 || patrimoineNet > 0) && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                   {totalActifBrut > 0 && (
-                    <div className="p-3 bg-red-900/30 rounded-lg border border-red-800">
-                      <p className="text-xs text-red-500 font-medium">{t('profil.actif_brut', lang)}</p>
-                      <p className="text-lg font-bold text-red-200">{formatMoney(totalActifBrut)}</p>
+                    <div className="p-3 bg-red-50 dark:bg-red-900/30 rounded-lg border border-red-200 dark:border-red-800">
+                      <p className="text-xs text-red-600 dark:text-red-500 font-medium">{t('profil.actif_brut', lang)}</p>
+                      <p className="text-lg font-bold text-red-800 dark:text-red-200">{formatMoney(totalActifBrut)}</p>
                     </div>
                   )}
                   {totalDettes > 0 && (
-                    <div className="p-3 bg-yellow-900/30 rounded-lg border border-yellow-800">
-                      <p className="text-xs text-yellow-500 font-medium">{t('profil.dettes_emprunts', lang)}</p>
-                      <p className="text-lg font-bold text-yellow-200">-{formatMoney(totalDettes)}</p>
+                    <div className="p-3 bg-yellow-50 dark:bg-yellow-900/30 rounded-lg border border-yellow-300 dark:border-yellow-800">
+                      <p className="text-xs text-yellow-700 dark:text-yellow-500 font-medium">{t('profil.dettes_emprunts', lang)}</p>
+                      <p className="text-lg font-bold text-yellow-900 dark:text-yellow-200">-{formatMoney(totalDettes)}</p>
                     </div>
                   )}
                   {patrimoineNet > 0 && (
