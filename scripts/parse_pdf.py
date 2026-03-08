@@ -68,12 +68,33 @@ KNOWN_CAR_BRANDS = [
 ]
 
 # ── Declaration types ──────────────────────────────────────────────────────────
-DSP_TYPES = {"DSP", "DSPM", "DSPFIN", "DSPMAJ"}
-DI_TYPES = {"DI", "DIM", "DIMAJ"}
+DSP_TYPES = {"DSP", "DSPM", "DSPFIN", "DSPMAJ", "DSPFM"}
+DI_TYPES = {"DI", "DIM", "DIMAJ", "DIA", "DIAM"}
 ALL_DOC_TYPES = DSP_TYPES | DI_TYPES
 
 # Minimum chars to consider the PDF has extractable text
 MIN_TEXT_LENGTH = 100
+
+# ── DIA numbered section mapping (1° through 8°) ──────────────────────────────
+DIA_SECTION_MAP = {
+    1: "activites_professionnelles",
+    2: "activites_consultant",
+    3: "participations_organes",
+    4: "participations_financieres",
+    5: "activites_conjoint",
+    6: "fonctions_benevoles",
+    7: "mandats_electifs",
+    8: "collaborateurs",
+}
+
+# Lines that are table headers — should NOT trigger a new section
+TABLE_HEADER_PATTERNS = [
+    r"^(?:Rémunération|Description|ou gratification|gratification|Néant)$",
+    r"^(?:Rémunération ou|gratification perçue au|cours de l'année précédente)$",
+    r"^(?:Conjoint|Nom et objet|ou de la personne|et responsabilités)$",
+    r"^(?:Description des activités|Description des autres|professionnelles exercées)$",
+    r"^(?:Activité professionnelle)$",
+]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -176,7 +197,8 @@ def normalize_name(s: str) -> str:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def extract_text_pdfplumber(pdf_path: str) -> str:
-    """Extract text from PDF using pdfplumber (best for structured PDFs)."""
+    """Extract text from PDF using pdfplumber (best for structured PDFs).
+    Uses only page.extract_text() to avoid duplicating table content."""
     try:
         import pdfplumber
     except ImportError:
@@ -189,14 +211,6 @@ def extract_text_pdfplumber(pdf_path: str) -> str:
             for page in pdf.pages:
                 page_text = page.extract_text() or ""
                 text_parts.append(page_text)
-
-                # Also extract tables for structured data
-                tables = page.extract_tables()
-                for table in tables:
-                    for row in table:
-                        if row:
-                            cells = [str(cell).strip() if cell else "" for cell in row]
-                            text_parts.append(" | ".join(cells))
     except Exception as exc:
         print(f"  ⚠ pdfplumber error: {exc}")
 
@@ -330,9 +344,17 @@ SECTION_PATTERNS = {
         r"(?i)activit[ée]s?\s+(?:ant[ée]rieures?|exerc[ée]es?\s+au\s+cours\s+des?\s+cinq)",
         r"(?i)cinq\s+derni[eè]res?\s+ann[ée]es?",
     ],
+    "activites_consultant": [
+        r"(?i)activit[ée]s?\s+de\s+consultant",
+        r"(?i)activit[ée]s?\s+de\s+conseil",
+    ],
+    "collaborateurs": [
+        r"(?i)collaborateurs?\s+parlementaires?",
+    ],
     "observations": [
         r"(?i)observations?\s+(?:du|de\s+la)\s+d[ée]clarant",
         r"(?i)observations?\s+compl[ée]mentaires?",
+        r"(?i)^Observations\s*$",
     ],
 }
 
@@ -371,17 +393,86 @@ def find_amounts_in_text(text: str) -> list[float]:
     return amounts
 
 
+def _is_table_header(line: str) -> bool:
+    """Check if a line is a table header that should not trigger a new section."""
+    stripped = line.strip()
+    for pat in TABLE_HEADER_PATTERNS:
+        if re.match(pat, stripped, re.IGNORECASE):
+            return True
+    return False
+
+
+def _split_dia_numbered(text: str) -> dict[str, str] | None:
+    """Split DIA format text by numbered sections (1°, 2°, etc.).
+    Returns {section_name: section_text} or None if not DIA format."""
+    # Check if this looks like a DIA (has numbered sections like "1°")
+    if not re.search(r'(?m)^\s*1°\s', text):
+        return None
+
+    sections = {}
+
+    # Find all numbered section markers
+    markers = list(re.finditer(r'(?m)^\s*(\d+)°\s', text))
+    if not markers:
+        return None
+
+    # Add header (text before first section)
+    if markers[0].start() > 0:
+        sections["header"] = text[:markers[0].start()].strip()
+
+    # Also find "Observations" section
+    obs_match = re.search(r'(?mi)^Observations\s*$', text)
+
+    for i, marker in enumerate(markers):
+        num = int(marker.group(1))
+        section_name = DIA_SECTION_MAP.get(num, f"section_{num}")
+
+        # Section text goes until next section, observations, or end
+        start = marker.start()
+        if i + 1 < len(markers):
+            end = markers[i + 1].start()
+        elif obs_match and obs_match.start() > start:
+            end = obs_match.start()
+        else:
+            end = len(text)
+
+        section_text = text[start:end].strip()
+        # Remove page footers like "Page 2/3"
+        section_text = re.sub(r'\nPage\s+\d+/\d+\s*$', '', section_text)
+        sections[section_name] = section_text
+
+    # Add observations
+    if obs_match:
+        obs_text = text[obs_match.start():].strip()
+        obs_text = re.sub(r'\nPage\s+\d+/\d+\s*$', '', obs_text)
+        sections["observations"] = obs_text
+
+    return sections
+
+
 def split_into_sections(text: str) -> dict[str, str]:
     """
     Split the full PDF text into sections based on section headers.
+    Handles both DIA numbered format (1°, 2°, ...) and keyword-based DSP format.
     Returns {section_name: section_text}.
     """
+    # First, try DIA numbered format
+    dia_sections = _split_dia_numbered(text)
+    if dia_sections:
+        return dia_sections
+
+    # Fall back to keyword-based splitting for DSP and other formats
     sections = {}
     lines = text.split("\n")
     current_section = "header"
     current_lines = []
 
     for line in lines:
+        # Skip table headers that could be mistaken for section markers
+        if _is_table_header(line):
+            current_lines.append(line)
+            continue
+
         matched = False
         for section_name, patterns in SECTION_PATTERNS.items():
             for pattern in patterns:
@@ -405,10 +496,288 @@ def split_into_sections(text: str) -> dict[str, str]:
     return sections
 
 
+def _section_is_neant(text: str) -> bool:
+    """Check if a section's content is essentially 'Néant' (nothing to declare)."""
+    # Remove the section header/title lines and table headers
+    lines = text.split("\n")
+    content_lines = []
+    for line in lines:
+        stripped = line.strip()
+        # Skip numbered section title, table headers, page footers
+        if re.match(r'^\d+°\s', stripped):
+            continue
+        if _is_table_header(stripped):
+            continue
+        if re.match(r'^Page\s+\d+/\d+', stripped):
+            continue
+        if re.match(r'^DIA/', stripped) or re.match(r'^DSP/', stripped):
+            continue
+        # Skip column header lines
+        if stripped in ("Description", "ou gratification", "Rémunération",
+                        "Rémunération ou", "gratification perçue au",
+                        "cours de l'année précédente", "Activité professionnelle",
+                        "Conjoint, partenaire lié par PACS ou concubin",
+                        "Nom et objet social de la structure",
+                        "ou de la personne morale",
+                        "Description des activités", "et responsabilités exercées",
+                        "Rémunération, indemnité", "Nom",
+                        "Description des autres activités", "professionnelles exercées"):
+            continue
+        # Skip very short lines that are just prepositions/articles
+        if len(stripped) < 3:
+            continue
+        content_lines.append(stripped)
+
+    # Check if the remaining content is just "Néant"
+    remaining = " ".join(content_lines).strip()
+    if not remaining:
+        return True
+    if re.match(r'^(?:Néant|NEANT|neant|N[ée]ant)\s*$', remaining, re.IGNORECASE):
+        return True
+    # Also handle "Néant" being the only meaningful word
+    cleaned = re.sub(r'(?i)\b(?:les|la|le|de|du|des|à|au|aux|en|et|ou|par|pour|dans|sur|un|une)\b', '', remaining)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    if re.match(r'^(?:Néant|NEANT|neant|N[ée]ant)\s*$', cleaned, re.IGNORECASE):
+        return True
+    return False
+
+
+def _extract_dia_employer_blocks(text: str) -> list[dict]:
+    """Extract employer blocks from DIA section 1° (activités professionnelles).
+    Each block starts with 'Employeur :' and contains function, period, and year-by-year salary."""
+    items = []
+
+    # Split by "Employeur :" markers
+    employer_blocks = re.split(r'(?=Employeur\s*:)', text)
+
+    for block in employer_blocks:
+        block = block.strip()
+        if not block or not re.search(r'Employeur\s*:', block):
+            continue
+
+        item = {}
+
+        # Extract employer name
+        emp_match = re.search(r'Employeur\s*:\s*(.+?)(?:\s+\d{4}\s*:|$)', block)
+        if emp_match:
+            employer = _clean_text(emp_match.group(1).strip())
+            # Clean trailing date patterns
+            employer = re.sub(r'\s+\d{4}\s*$', '', employer).strip()
+            if employer:
+                item['denomination'] = employer
+
+        # Extract period
+        period_match = re.search(r'de\s+(\d{1,2}/\d{4})\s+à\s+(\d{1,2}/\d{4})', block)
+        if period_match:
+            item['periode'] = f"{period_match.group(1)} à {period_match.group(2)}"
+
+        # Extract function/role - look for known government titles or multi-line function
+        for pattern in [
+            r"(?m)^((?:Secr[ée]taire\s+d[''\u2019]Etat|Ministre|Premier\s+ministre|Pr[ée]sident)[^\n]*)",
+            r"(?m)^((?:D[ée]put[ée]e?|S[ée]nateur|S[ée]natrice|Conseiller)[^\n]*)",
+        ]:
+            fm = re.search(pattern, block)
+            if fm and 'fonction' not in item:
+                fn = _clean_text(fm.group(1))
+                # Don't use the employer line as function
+                if not fn.startswith('Employeur'):
+                    # Remove trailing year:amount patterns
+                    fn = re.sub(r'\s+\d{4}\s*:\s*\d[\d\s]*€.*$', '', fn).strip()
+                    if fn:
+                        item['fonction'] = fn
+
+        # Extract year-by-year revenues
+        year_salaries = []
+        for ym in re.finditer(
+            r'(20\d{2})\s*:\s*(\d[\d\s\xa0]*(?:[.,]\d{1,2})?)\s*(?:€|euros?)\s*(?:Net|Brut|net|brut)?',
+            block,
+        ):
+            year = ym.group(1)
+            amount = parse_amount(ym.group(2))
+            if amount is not None and amount > 0:
+                year_salaries.append({"annee": year, "montant": amount})
+
+        if year_salaries:
+            item['revenus_annuels'] = year_salaries
+            item['montant_euro'] = sum(ys['montant'] for ys in year_salaries)
+
+        # Extract comment
+        comment_match = re.search(r'Commentaire\s*:\s*(.+?)(?:\n|$)', block)
+        if comment_match:
+            comment = _clean_text(comment_match.group(1))
+            if comment:
+                item['commentaire'] = comment
+
+        if item:
+            item['description'] = _clean_text(block[:500])
+            items.append(item)
+
+    return items
+
+
+def _extract_participation_financiere_items(text: str) -> list[dict]:
+    """Extract financial participation data (e.g., SCI shares) from DIA section 4°."""
+    items = []
+
+    # Look for "Société :" blocks
+    societe_blocks = re.split(r'(?=Soci[ée]t[ée]\s*:)', text)
+
+    for block in societe_blocks:
+        block = block.strip()
+        if not block or not re.search(r'Soci[ée]t[ée]\s*:', block):
+            continue
+
+        item = {}
+
+        # Extract society name
+        soc_match = re.search(r'Soci[ée]t[ée]\s*:\s*(.+?)(?:\s+\d|$|\n)', block)
+        if soc_match:
+            name = _clean_text(soc_match.group(1))
+            if name:
+                item['denomination'] = name
+
+        # Extract number of shares
+        parts_match = re.search(r'Nombre de parts d[ée]tenues\s*:\s*(\d[\d\s]*)', block)
+        if parts_match:
+            item['nombre_parts'] = parts_match.group(1).replace(' ', '').strip()
+
+        # Extract percentage
+        pct_match = re.search(r'Pourcentage du capital d[ée]tenu\s*:\s*(\d+(?:[.,]\d+)?)\s*%', block)
+        if pct_match:
+            item['pourcentage_capital'] = pct_match.group(1) + ' %'
+
+        # Extract amounts
+        amounts = find_amounts_in_text(block)
+        if amounts:
+            item['montant_euro'] = max(amounts)
+
+        # Extract conseil control
+        conseil_match = re.search(r"Contr[ôo]le d'une activit[ée] de conseil\s*:\s*(Oui|Non)", block, re.IGNORECASE)
+        if conseil_match:
+            item['controle_conseil'] = conseil_match.group(1)
+
+        if item:
+            item['description'] = _clean_text(block[:500])
+            items.append(item)
+
+    return items
+
+
+def _extract_mandat_electif_items(text: str) -> list[dict]:
+    """Extract elective mandate data from DIA section 7°."""
+    items = []
+
+    # Look for mandate entries — typically start with a function name or [Fonction conservée]
+    # Split on "[Fonction conservée]" or similar markers
+    blocks = re.split(r'(?=\[Fonction\s+conserv[ée]e\]|\[Fonction\s+nouvelle\])', text)
+    if len(blocks) <= 1:
+        # Try splitting by "Employeur" or by paragraph
+        blocks = [text]
+
+    for block in blocks:
+        block = block.strip()
+        if not block or len(block) < 10:
+            continue
+        if _section_is_neant(block):
+            continue
+
+        item = {}
+
+        # Check for "Fonction conservée" marker
+        if re.search(r'\[Fonction\s+conserv[ée]e\]', block):
+            item['statut'] = 'Fonction conservée'
+        elif re.search(r'\[Fonction\s+nouvelle\]', block):
+            item['statut'] = 'Fonction nouvelle'
+
+        # Extract mandate name (e.g., "Conseiller municipal")
+        for pattern in [
+            r"(?m)^((?:Conseill|D[ée]put|S[ée]nat|Maire|Pr[ée]sident|Vice)[^\n]*)",
+        ]:
+            fm = re.search(pattern, block)
+            if fm and 'mandat' not in item:
+                mandat_text = _clean_text(fm.group(1))
+                # Remove trailing year:amount patterns
+                mandat_text = re.sub(r'\s+\d{4}\s*:\s*\d[\d\s]*€.*$', '', mandat_text).strip()
+                if mandat_text:
+                    item['mandat'] = mandat_text
+
+        # Extract period
+        period_match = re.search(r'de\s+(\d{1,2}/\d{4})\s+à\s+(\d{1,2}/\d{4})', block)
+        if period_match:
+            item['periode'] = f"{period_match.group(1)} à {period_match.group(2)}"
+
+        # Extract comment (in mandats section)
+        comment_match = re.search(r'Commentaire\s*:\s*(.+?)(?:\n|$)', block)
+        if comment_match:
+            comment = _clean_text(comment_match.group(1))
+            # Remove trailing year:amount patterns
+            comment = re.sub(r'\s+\d{4}\s*:\s*\d[\d\s]*€.*$', '', comment).strip()
+            if comment:
+                item['commentaire'] = comment
+
+        # Extract year-by-year revenues
+        year_salaries = []
+        for ym in re.finditer(
+            r'(20\d{2})\s*:\s*(\d[\d\s\xa0]*(?:[.,]\d{1,2})?)\s*(?:€|euros?)\s*(?:Net|Brut|net|brut)?',
+            block,
+        ):
+            year = ym.group(1)
+            amount = parse_amount(ym.group(2))
+            if amount is not None and amount > 0:
+                year_salaries.append({"annee": year, "montant": amount})
+
+        if year_salaries:
+            item['revenus_annuels'] = year_salaries
+            item['montant_euro'] = sum(ys['montant'] for ys in year_salaries)
+
+        if item and any(v for k, v in item.items() if k != 'description'):
+            item['description'] = _clean_text(block[:500])
+            items.append(item)
+
+    return items
+
+
+def _extract_observations(text: str) -> list[dict]:
+    """Extract observation text from the observations section."""
+    # Remove the "Observations" header
+    content = re.sub(r'(?i)^Observations\s*\n?', '', text).strip()
+    # Remove page footers
+    content = re.sub(r'\nPage\s+\d+/\d+\s*$', '', content).strip()
+    if not content:
+        return []
+    return [{"description": _clean_text(content)}]
+
+
 def extract_section_items(section_text: str, section_name: str) -> list[dict]:
     """Extract individual items from a section's text."""
+    # Check for "Néant" sections first
+    if _section_is_neant(section_text):
+        return []
+
     items = []
     amounts = find_amounts_in_text(section_text)
+
+    # DIA-specific section handlers
+    if section_name == "activites_professionnelles":
+        # Try DIA employer blocks first
+        dia_items = _extract_dia_employer_blocks(section_text)
+        if dia_items:
+            return dia_items
+
+    if section_name == "participations_financieres":
+        # Try DIA société blocks
+        part_items = _extract_participation_financiere_items(section_text)
+        if part_items:
+            return part_items
+
+    if section_name == "mandats_electifs":
+        # Try DIA mandate extraction
+        mandat_items = _extract_mandat_electif_items(section_text)
+        if mandat_items:
+            return mandat_items
+
+    if section_name == "observations":
+        return _extract_observations(section_text)
 
     # For revenue sections, try splitting by "Employeur :" blocks first
     if section_name == "revenus":
@@ -799,11 +1168,13 @@ def parse_pdf_declaration(pdf_path: str, use_ocr: bool = True) -> dict:
         "extraction_method": "unknown",
         "raw_text_length": 0,
         "sections_found": [],
+        "neant_sections": [],
     }
 
     # Extract text
     text = extract_text_from_pdf(pdf_path, use_ocr=use_ocr)
     result["raw_text_length"] = len(text)
+    result["raw_text"] = text  # Store full text for debugging/completeness
 
     if len(text.strip()) < MIN_TEXT_LENGTH:
         result["extraction_method"] = "failed"
@@ -812,14 +1183,42 @@ def parse_pdf_declaration(pdf_path: str, use_ocr: bool = True) -> dict:
 
     result["extraction_method"] = "pdfplumber"  # or "ocr" if OCR was used
 
-    # Detect if this is a DSP (patrimoine) or DI (intérêts)
+    # Detect if this is a DSP (patrimoine) or DI/DIA (intérêts)
     is_dsp = bool(re.search(r"(?i)d[ée]claration\s+de\s+(?:situation\s+)?patrimoin", text))
+    is_dia = bool(re.search(r"(?i)DIA/", text)) or bool(re.search(r"(?i)d[ée]claration\s+d['\u2019]int[ée]r[êe]ts?\s+et\s+d['\u2019]activit[ée]s?", text))
     is_di = bool(re.search(r"(?i)d[ée]claration\s+d['\u2019]int[ée]r[êe]ts?", text))
-    result["type_detected"] = "DSP" if is_dsp else ("DI" if is_di else "unknown")
+    if is_dsp:
+        result["type_detected"] = "DSP"
+    elif is_dia:
+        result["type_detected"] = "DIA"
+    elif is_di:
+        result["type_detected"] = "DI"
+    else:
+        result["type_detected"] = "unknown"
+
+    # Extract declarant name from header if available
+    name_match = re.search(r'(?:DIA|DI|DSP|DSPM)/([A-ZÀ-Ü\-]+)-([A-ZÀ-Ü\-]+)', text)
+    if name_match:
+        result["declarant_nom"] = name_match.group(1).title()
+        result["declarant_prenom"] = name_match.group(2).title()
+
+    # Extract date from "Fait, le DD/MM/YYYY HH:MM:SS"
+    date_match = re.search(r'Fait,?\s+le\s+(\d{2}/\d{2}/\d{4}(?:\s+\d{2}:\d{2}:\d{2})?)', text)
+    if date_match:
+        result["date_declaration"] = date_match.group(1)
 
     # Split into sections
     sections = split_into_sections(text)
     result["sections_found"] = [k for k in sections if k != "header"]
+
+    # Track which sections are "Néant"
+    neant_sections = []
+    for section_name, section_text in sections.items():
+        if section_name == "header":
+            continue
+        if _section_is_neant(section_text):
+            neant_sections.append(section_name)
+    result["neant_sections"] = neant_sections
 
     # Extract data from each section
     totals = {
@@ -844,6 +1243,10 @@ def parse_pdf_declaration(pdf_path: str, use_ocr: bool = True) -> dict:
         "revenus": "revenus",
     }
 
+    # For DIA format, revenues from activites_professionnelles and mandats_electifs
+    # should also count towards total revenues
+    revenue_sections = {"revenus", "activites_professionnelles", "mandats_electifs"}
+
     for section_name, section_text in sections.items():
         if section_name == "header":
             continue
@@ -860,6 +1263,14 @@ def parse_pdf_declaration(pdf_path: str, use_ocr: bool = True) -> dict:
                     for item in items
                 )
                 totals[total_key] += section_total
+
+            # For DIA, also count revenues from professional activities and mandates
+            if section_name in revenue_sections and section_name != "revenus":
+                section_total = sum(
+                    item.get("montant_euro", 0)
+                    for item in items
+                )
+                totals["revenus"] += section_total
 
     # Compute summary
     patrimoine_brut = (
@@ -1049,13 +1460,19 @@ def process_elu_pdfs(
 def update_elu_with_pdf_data(elu: dict, pdf_data: dict) -> bool:
     """
     Update an elu dict with data extracted from PDF.
-    Stores ALL extracted data (patrimoine, revenus, activités, mandats, etc.).
+    Stores ALL extracted data inside elu['hatvp'] so the frontend can find it,
+    and also updates top-level financial summary fields.
     Returns True if any data was updated.
     """
     summary = pdf_data.get("summary", {})
     updated = False
 
-    # Update patrimoine if PDF data is better
+    # Ensure hatvp dict exists
+    if not elu.get("hatvp"):
+        elu["hatvp"] = {}
+    hatvp = elu["hatvp"]
+
+    # Update top-level patrimoine if PDF data is better
     pdf_patrimoine = summary.get("patrimoine_brut_euro", 0)
     if pdf_patrimoine > 0 and pdf_patrimoine > elu.get("patrimoine", 0):
         elu["patrimoine"] = pdf_patrimoine
@@ -1082,31 +1499,75 @@ def update_elu_with_pdf_data(elu: dict, pdf_data: dict) -> bool:
         elu["revenus_source"] = "pdf_hatvp"
         updated = True
 
-    # Store all section details extracted from PDFs
-    section_to_detail_key = {
-        "biens_immobiliers": "details_biens_immobiliers",
-        "comptes_bancaires": "details_comptes_bancaires",
-        "instruments_financiers": "details_instruments_financiers",
-        "participations_financieres": "details_participations_financieres",
-        "vehicules": "details_vehicules",
-        "biens_mobiliers_valeur": "details_biens_mobiliers",
-        "dettes": "details_dettes",
-        "revenus": "details_revenus",
-        "activites_professionnelles": "details_activites_professionnelles",
-        "mandats_electifs": "details_mandats_electifs",
+    # Mapping: PDF section name → (hatvp nb_* key, hatvp details_* key)
+    # The details_* keys must match what the frontend expects in NB_TO_DETAILS_KEY
+    section_to_hatvp = {
+        "activites_professionnelles": ("nb_activites_professionnelles", "details_activites"),
+        "activites_consultant":       ("nb_activites_consultant", "details_activites_consultant"),
+        "participations_organes":     ("nb_participations_organes", "details_participations_organes"),
+        "participations_financieres": ("nb_participations_financieres", "details_participations_financieres"),
+        "activites_conjoint":         ("nb_activites_conjoint", "details_activites_conjoint"),
+        "fonctions_benevoles":        ("nb_fonctions_benevoles", "details_fonctions_benevoles"),
+        "mandats_electifs":           ("nb_mandats_electifs", "details_mandats"),
+        "collaborateurs":             ("nb_activites_collaborateurs", "details_collaborateurs"),
+        "revenus":                    ("nb_revenus", "details_revenus"),
+        "biens_immobiliers":          ("nb_biens_immobiliers", "details_biens_immobiliers"),
+        "comptes_bancaires":          ("nb_comptes_bancaires", "details_comptes_bancaires"),
+        "instruments_financiers":     ("nb_instruments_financiers", "details_instruments_financiers"),
+        "vehicules":                  ("nb_vehicules", "details_vehicules"),
+        "biens_mobiliers_valeur":     ("nb_biens_mobiliers_valeur", "details_biens_divers"),
+        "dettes":                     ("nb_dettes", "details_dettes"),
+        "observations":               (None, "details_observations"),
     }
-    for section_name, detail_key in section_to_detail_key.items():
+
+    for section_name, (nb_key, detail_key) in section_to_hatvp.items():
         items = pdf_data.get(section_name, [])
-        if items:
-            if detail_key not in elu:
-                elu[detail_key] = items
+        if not items:
+            continue
+
+        # Set count in hatvp
+        if nb_key:
+            current_count = hatvp.get(nb_key, 0)
+            if len(items) > current_count:
+                hatvp[nb_key] = len(items)
                 updated = True
-            else:
-                existing = {json.dumps(it, sort_keys=True) for it in elu[detail_key]}
-                for it in items:
-                    if json.dumps(it, sort_keys=True) not in existing:
-                        elu[detail_key].append(it)
-                        updated = True
+
+        # Store detail items in hatvp
+        if detail_key not in hatvp:
+            hatvp[detail_key] = items
+            updated = True
+        else:
+            existing = {json.dumps(it, sort_keys=True, default=str) for it in hatvp[detail_key]}
+            for it in items:
+                if json.dumps(it, sort_keys=True, default=str) not in existing:
+                    hatvp[detail_key].append(it)
+                    updated = True
+            # Update count after merge
+            if nb_key:
+                hatvp[nb_key] = len(hatvp[detail_key])
+
+    # Store neant sections info
+    neant_sections = pdf_data.get("neant_sections", [])
+    if neant_sections:
+        hatvp["pdf_neant_sections"] = neant_sections
+
+    # Store observations text
+    if pdf_data.get("observations"):
+        hatvp["details_observations"] = pdf_data["observations"]
+
+    # Store PDF type detected
+    type_detected = pdf_data.get("type_detected", "")
+    if type_detected:
+        hatvp["pdf_type_detected"] = type_detected
+
+    # Store declaration date
+    date_decl = pdf_data.get("date_declaration", "")
+    if date_decl:
+        hatvp["pdf_date_declaration"] = date_decl
+
+    # Update total_revenus_euro in hatvp if PDF has better data
+    if pdf_revenus > 0 and pdf_revenus > (hatvp.get("total_revenus_euro") or 0):
+        hatvp["total_revenus_euro"] = pdf_revenus
 
     # Add PDF metadata
     if not elu.get("hatvp_pdf"):
@@ -1114,6 +1575,7 @@ def update_elu_with_pdf_data(elu: dict, pdf_data: dict) -> bool:
     elu["hatvp_pdf"] = {
         "parsed_at": pdf_data.get("parsed_at", ""),
         "declarations_parsed": pdf_data.get("declarations_parsed", 0),
+        "type_detected": type_detected,
         "patrimoine_brut_euro": summary.get("patrimoine_brut_euro", 0),
         "patrimoine_net_euro": summary.get("patrimoine_net_euro", 0),
         "immobilier_euro": summary.get("immobilier_euro", 0),
