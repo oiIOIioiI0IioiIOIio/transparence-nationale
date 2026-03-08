@@ -60,6 +60,13 @@ HEADERS = {
     "Accept": "application/pdf, text/csv, */*",
 }
 
+# Known car brands for vehicle section detection
+KNOWN_CAR_BRANDS = [
+    "Peugeot", "Renault", "Citroën", "Audi", "BMW", "Mercedes",
+    "Volkswagen", "Toyota", "Honda", "Ford", "Volvo", "Tesla",
+    "Porsche", "Fiat", "Opel", "Nissan", "Hyundai", "Kia",
+]
+
 # ── Declaration types ──────────────────────────────────────────────────────────
 DSP_TYPES = {"DSP", "DSPM", "DSPFIN", "DSPMAJ"}
 DI_TYPES = {"DI", "DIM", "DIMAJ"}
@@ -759,9 +766,7 @@ def _extract_vehicule_fields(text: str, item: dict) -> None:
             break
 
     # Common car brands detection
-    for brand in ["Peugeot", "Renault", "Citroën", "Audi", "BMW", "Mercedes",
-                   "Volkswagen", "Toyota", "Honda", "Ford", "Volvo", "Tesla",
-                   "Porsche", "Fiat", "Opel", "Nissan", "Hyundai", "Kia"]:
+    for brand in KNOWN_CAR_BRANDS:
         if re.search(r"(?i)\b" + re.escape(brand) + r"\b", text):
             if "marque" not in item:
                 item["marque"] = brand

@@ -24,6 +24,9 @@ const MANDAT_LABEL_KEYS: Record<string, string> = {
   autre: 'mandat_label.autre',
 };
 
+// Mandate types that require patrimoine declaration (government + HATVP college members)
+const PATRIMOINE_REQUIRED_MANDATE_TYPES = ['gouvernement', 'president'];
+
 const DOC_TYPE_LABELS: Record<string, string> = {
   DSP: 'Déclaration de Situation Patrimoniale',
   DSPM: 'DSP — Modification',
@@ -607,9 +610,7 @@ export default function ProfilPage() {
                   <p className="text-xs sm:text-sm text-yellow-200/80">
                     {(() => {
                       // Check if mandate type does not require patrimoine declaration
-                      // Only government members and HATVP college members have published patrimoine
-                      const patrimoineRequiredTypes = ['gouvernement', 'president'];
-                      const hasPatrimoineMandat = elu.types_mandat?.some((tp) => patrimoineRequiredTypes.includes(tp));
+                      const hasPatrimoineMandat = elu.types_mandat?.some((tp) => PATRIMOINE_REQUIRED_MANDATE_TYPES.includes(tp));
                       if (!hasPatrimoineMandat) {
                         return t('profil.no_patrimoine_mandat', lang);
                       }
