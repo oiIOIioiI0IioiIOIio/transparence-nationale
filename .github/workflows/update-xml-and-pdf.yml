@@ -23,6 +23,10 @@ on:
         description: "Nombre d'élus à traiter (vide = tous)"
         required: false
         default: ""
+      save_every:
+        description: "Sauvegarder tous les N élus (défaut 100)"
+        required: false
+        default: "100"
 
 permissions:
   contents: write
@@ -62,7 +66,7 @@ jobs:
       - name: Mise à jour depuis le XML global
         if: github.event.inputs.refresh_xml == 'true'
         run: |
-          FLAGS="--refresh-xml"
+          FLAGS="--refresh-xml --save-every ${{ github.event.inputs.save_every || '100' }}"
           if [ -n "${{ github.event.inputs.limit }}" ]; then
             FLAGS="$FLAGS --limit ${{ github.event.inputs.limit }}"
           fi
@@ -72,10 +76,25 @@ jobs:
         if: github.event.inputs.refresh_xml == 'true'
         run: python scripts/generate-elus.py --enrich-csv-only
 
+      - name: 💾 Commit intermédiaire XML
+        if: github.event.inputs.refresh_xml == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/data/elus.json
+          git add -f public/data/elus/
+          if ! git diff --cached --quiet; then
+            COUNT=$(python3 -c "import json; d=json.load(open('public/data/elus.json')); print(len(d))")
+            git commit -m "🗳️ Checkpoint XML — $(date -u +'%H:%M UTC') (${COUNT} élus)"
+            git pull --rebase
+            git push
+            echo "::notice ::💾 Checkpoint XML commité (${COUNT} élus)"
+          fi
+
       - name: Traiter les PDFs via OCR
         if: github.event.inputs.process_pdfs == 'true'
         run: |
-          FLAGS="--batch"
+          FLAGS="--batch --save-every ${{ github.event.inputs.save_every || '100' }}"
           if [ -n "${{ github.event.inputs.limit }}" ]; then
             FLAGS="$FLAGS --limit ${{ github.event.inputs.limit }}"
           fi
@@ -93,6 +112,21 @@ jobs:
       - name: Merger les données PDF dans elus.json
         if: github.event.inputs.process_pdfs == 'true'
         run: python scripts/parse_pdf.py --merge-to-main
+
+      - name: 💾 Commit intermédiaire PDF
+        if: github.event.inputs.process_pdfs == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/data/elus.json public/data/pdf_declarations/
+          git add -f public/data/elus/
+          if ! git diff --cached --quiet; then
+            COUNT=$(python3 -c "import json; d=json.load(open('public/data/elus.json')); print(len(d))")
+            git commit -m "📄 Checkpoint PDF — $(date -u +'%H:%M UTC') (${COUNT} élus)"
+            git pull --rebase
+            git push
+            echo "::notice ::💾 Checkpoint PDF commité (${COUNT} élus)"
+          fi
 
       - name: Réorganiser les données (slim elus.json + fichiers individuels)
         run: python scripts/generate-elus.py --reorganize

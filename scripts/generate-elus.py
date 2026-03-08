@@ -42,6 +42,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
+from progress import BatchProgress
 
 # ── Chemins ────────────────────────────────────────────────────────────────────
 SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
@@ -51,6 +52,7 @@ ELUS_DETAIL_DIR = os.path.join(PROJECT_ROOT, "public", "data", "elus")
 CACHE_DIR    = os.path.join(PROJECT_ROOT, "public", "data", "hatvp_cache")
 INDEX_CACHE  = os.path.join(CACHE_DIR, "liste.csv")
 XML_CACHE    = os.path.join(CACHE_DIR, "declarations.xml")
+PROGRESS_JSON = os.path.join(PROJECT_ROOT, "public", "data", "progress.json")
 
 # ── URLs HATVP open data ───────────────────────────────────────────────────────
 HATVP_INDEX_URL = "https://www.hatvp.fr/livraison/opendata/liste.csv"
@@ -128,6 +130,8 @@ def parse_args():
                    help="Générer les fichiers JSON par personne (public/data/elus/{id}.json) depuis elus.json")
     p.add_argument("--reorganize",       action="store_true",
                    help="Réorganiser les données: fichiers individuels complets + elus.json allégé pour la liste")
+    p.add_argument("--save-every",       type=int, default=100,
+                   help="Sauvegarder les fichiers individuels tous les N élus (défaut 100)")
     return p.parse_args()
 
 
@@ -1748,27 +1752,33 @@ def reorganize_data(batch_size: int = 100) -> None:
     print(f"   → Fichiers individuels complets dans {ELUS_DETAIL_DIR}/")
     print(f"   → elus.json allégé (champs liste uniquement)")
 
-    for batch_start in range(0, total, batch_size):
-        batch = all_elus[batch_start:batch_start + batch_size]
-        for elu in batch:
-            elu_id = elu.get("id", "")
-            if not elu_id:
-                continue
+    bp = BatchProgress(
+        "📂 Réorganisation",
+        total=total,
+        save_interval=batch_size,
+        progress_json_path=PROGRESS_JSON,
+    )
 
-            # Clean page footer artifacts from existing detail data
-            cleaned_elu = _clean_detail_artifacts(elu)
+    for elu in all_elus:
+        elu_id = elu.get("id", "")
+        if not elu_id:
+            bp.tick()
+            continue
 
-            # Write full individual JSON
-            out_path = os.path.join(ELUS_DETAIL_DIR, f"{elu_id}.json")
-            with open(out_path, "w", encoding="utf-8") as f:
-                json.dump(cleaned_elu, f, ensure_ascii=False, separators=(",", ":"))
-            written += 1
+        # Clean page footer artifacts from existing detail data
+        cleaned_elu = _clean_detail_artifacts(elu)
 
-            # Build slim entry for list
-            slim_list.append(build_list_entry(elu))
+        # Write full individual JSON
+        out_path = os.path.join(ELUS_DETAIL_DIR, f"{elu_id}.json")
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(cleaned_elu, f, ensure_ascii=False, separators=(",", ":"))
+        written += 1
 
-        batch_end = min(batch_start + batch_size, total)
-        print(f"   ✓ Batch {batch_start + 1}–{batch_end} / {total}")
+        # Build slim entry for list
+        slim_list.append(build_list_entry(elu))
+        bp.tick(updated=True)
+
+    bp.finish()
 
     # Save slim elus.json
     with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
@@ -1943,6 +1953,57 @@ def enrich_elus_from_csv(elus: list[dict], csv_index: list[dict]) -> None:
     print(f"  ✓ {enriched} élus enrichis depuis le CSV")
 
 
+def _flush_xml_batch(pending: dict[str, dict], csv_index: list[dict]) -> None:
+    """Apply a batch of pending XML updates to elus.json and individual JSONs."""
+    all_elus = load_elus()
+
+    # Build full detail (no cap) for per-person JSONs
+    full_details: dict[str, dict] = {}
+    for eid in pending:
+        cache_path = os.path.join(CACHE_DIR, f"{eid}.json")
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    raw_result = json.load(f)
+                full_details[eid] = build_full_detail_hatvp(raw_result)
+            except (json.JSONDecodeError, OSError):
+                full_details[eid] = pending[eid]
+        else:
+            full_details[eid] = pending[eid]
+
+    for e in all_elus:
+        eid = e.get("id")
+        if eid not in pending:
+            continue
+        resume = pending[eid]
+        e["hatvp"] = resume
+        if resume.get("total_revenus_euro", 0) > 0:
+            e["revenus"] = resume["total_revenus_euro"]
+        elif e.get("revenus", 0) == 85296:
+            e["revenus"] = 0
+        pat_net = resume.get("patrimoine_net_euro", 0)
+        if pat_net:
+            e["patrimoine"] = pat_net
+        act_brut = resume.get("total_actif_brut_euro", 0)
+        if act_brut:
+            e["immobilier"] = resume.get("valeur_biens_immobiliers_euro", 0)
+            e["placements_montant"] = (
+                resume.get("valeur_instruments_financiers_euro", 0)
+                + resume.get("valeur_participations_financieres_euro", 0)
+                + resume.get("valeur_comptes_bancaires_euro", 0)
+                + resume.get("valeur_valeurs_bourse_euro", 0)
+                + resume.get("valeur_valeurs_non_bourse_euro", 0)
+                + resume.get("valeur_assurances_vie_euro", 0)
+                + resume.get("valeur_fonds_euro", 0)
+            )
+        # Save per-person JSON with full details (no item cap)
+        save_elu_detail(e, full_details.get(eid, resume))
+
+    enrich_elus_from_csv(all_elus, csv_index)
+    save_elus(all_elus)
+    print(f"  ✓ Saved {len(pending)} individual JSONs + elus.json")
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Main
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2093,7 +2154,18 @@ def main():
     done      = 0
     not_found = 0
     with_data = 0
-    updated: dict[str, dict] = {}
+    save_every = args.save_every
+    # Buffer of updates accumulated since last checkpoint save
+    pending: dict[str, dict] = {}
+    # All updates (for the final reorganize)
+    all_updated: dict[str, dict] = {}
+
+    bp = BatchProgress(
+        "🗳️ XML Processing",
+        total=total,
+        save_interval=save_every,
+        progress_json_path=PROGRESS_JSON,
+    )
 
     for i, elu in enumerate(elus, 1):
         prenom = elu.get("prenom", "")
@@ -2108,10 +2180,12 @@ def main():
 
         if result is None:
             not_found += 1
+            is_checkpoint = bp.tick(failed=True)
         else:
             done += 1
             resume = build_resume_hatvp(result)
-            updated[elu_id] = resume
+            pending[elu_id] = resume
+            all_updated[elu_id] = resume
 
             total_items = sum(
                 len(result.get(s, []))
@@ -2136,57 +2210,25 @@ def main():
                 with open(detail_path, "w", encoding="utf-8") as f:
                     json.dump(result, f, ensure_ascii=False, indent=2)
 
-    # ���─ Mettre à jour elus.json ────────────────────────────────────────────────
-    if not args.dry_run and updated:
-        all_elus = load_elus()
-        # Build full detail (no cap) for per-person JSONs
-        full_details: dict[str, dict] = {}
-        for eid in updated:
-            cache_path = os.path.join(CACHE_DIR, f"{eid}.json")
-            if os.path.exists(cache_path):
-                try:
-                    with open(cache_path, "r", encoding="utf-8") as f:
-                        raw_result = json.load(f)
-                    full_details[eid] = build_full_detail_hatvp(raw_result)
-                except (json.JSONDecodeError, OSError):
-                    full_details[eid] = updated[eid]
-            else:
-                full_details[eid] = updated[eid]
+            is_checkpoint = bp.tick(updated=bool(total_items))
 
-        for e in all_elus:
-            eid = e.get("id")
-            if eid in updated:
-                resume = updated[eid]
-                e["hatvp"] = resume
-                if resume.get("total_revenus_euro", 0) > 0:
-                    e["revenus"] = resume["total_revenus_euro"]
-                elif e.get("revenus", 0) == 85296:
-                    # 85296 = fake default revenue (≈ député brut annuel) from initial data
-                    e["revenus"] = 0
-                pat_net = resume.get("patrimoine_net_euro", 0)
-                if pat_net:
-                    e["patrimoine"] = pat_net
-                act_brut = resume.get("total_actif_brut_euro", 0)
-                if act_brut:
-                    e["immobilier"] = resume.get("valeur_biens_immobiliers_euro", 0)
-                    e["placements_montant"] = (
-                        resume.get("valeur_instruments_financiers_euro", 0)
-                        + resume.get("valeur_participations_financieres_euro", 0)
-                        + resume.get("valeur_comptes_bancaires_euro", 0)
-                        + resume.get("valeur_valeurs_bourse_euro", 0)
-                        + resume.get("valeur_valeurs_non_bourse_euro", 0)
-                        + resume.get("valeur_assurances_vie_euro", 0)
-                        + resume.get("valeur_fonds_euro", 0)
-                    )
-                # Save per-person JSON with full details (no item cap)
-                save_elu_detail(e, full_details.get(eid, resume))
+        # ── Checkpoint save every save_every elus ────────────────────────
+        if is_checkpoint and not args.dry_run and pending:
+            print(f"\n💾 Checkpoint ({i}/{total}) — {len(pending)} pending…")
+            _flush_xml_batch(pending, csv_index)
+            pending.clear()
 
-        enrich_elus_from_csv(all_elus, csv_index)
-        save_elus(all_elus)
+    # ── Final flush of remaining pending ─────────────────────────────────────
+    if not args.dry_run and pending:
+        print(f"\n💾 Final save — {len(pending)} remaining…")
+        _flush_xml_batch(pending, csv_index)
 
-        # After full save, reorganize: slim elus.json + full individual JSONs
+    bp.finish()
+
+    # ── After full save, reorganize: slim elus.json + full individual JSONs ──
+    if not args.dry_run and all_updated:
         print("\n📂 Réorganisation automatique…")
-        reorganize_data(batch_size=100)
+        reorganize_data(batch_size=save_every)
 
     # ── PDF fallback for elus with no patrimoine data ─────────────────────────
     pdf_updated = 0

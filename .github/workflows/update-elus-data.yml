@@ -7,6 +7,10 @@ on:
         description: "Nombre d'élus à générer (vide = tous)"
         required: false
         default: ""
+      save_every:
+        description: "Sauvegarder tous les N élus (défaut 100)"
+        required: false
+        default: "100"
   schedule:
     - cron: "0 6 1 * *"
 
@@ -41,14 +45,28 @@ jobs:
 
       - name: Générer les données élus
         run: |
+          FLAGS="--save-every ${{ github.event.inputs.save_every || '100' }}"
           if [ -n "${{ github.event.inputs.limit }}" ]; then
-            python scripts/generate-elus.py --limit "${{ github.event.inputs.limit }}"
-          else
-            python scripts/generate-elus.py
+            FLAGS="$FLAGS --limit ${{ github.event.inputs.limit }}"
           fi
+          python scripts/generate-elus.py $FLAGS
 
       - name: Enrichir les métadonnées depuis le CSV
         run: python scripts/generate-elus.py --enrich-csv-only
+
+      - name: 💾 Commit intermédiaire
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/data/elus.json
+          git add -f public/data/elus/
+          if ! git diff --cached --quiet; then
+            COUNT=$(python3 -c "import json; d=json.load(open('public/data/elus.json')); print(len(d))")
+            git commit -m "🗳️ Checkpoint données — $(date -u +'%H:%M UTC') (${COUNT} élus)"
+            git pull --rebase
+            git push
+            echo "::notice ::💾 Checkpoint commité (${COUNT} élus)"
+          fi
 
       - name: Réorganiser les données (slim elus.json + fichiers individuels)
         run: python scripts/generate-elus.py --reorganize
