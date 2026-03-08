@@ -1815,17 +1815,31 @@ def save_elus(elus: list[dict]) -> None:
 
 
 def _flush_pending_updates(pending_ids: dict[str, dict]) -> None:
-    """Apply pending PDF updates to elus.json and individual JSON files."""
+    """Apply pending PDF updates to elus.json and individual JSON files.
+
+    For individual JSONs, merges PDF data into the EXISTING file (which may
+    contain full XML detail data) rather than overwriting with data from
+    elus.json (which may be slim). This preserves full detail data.
+    """
     all_elus = load_elus()
+    os.makedirs(ELUS_DETAIL_DIR, exist_ok=True)
     for e in all_elus:
         eid = e.get("id")
         if eid in pending_ids:
             update_elu_with_pdf_data(e, pending_ids[eid])
-            # Also save the individual JSON
-            os.makedirs(ELUS_DETAIL_DIR, exist_ok=True)
+            # Merge PDF data into existing individual JSON (preserves full data)
             out_path = os.path.join(ELUS_DETAIL_DIR, f"{eid}.json")
+            individual = e  # fallback: use elus.json entry
+            if os.path.exists(out_path):
+                try:
+                    with open(out_path, "r", encoding="utf-8") as f:
+                        individual = json.load(f)
+                    # Apply PDF data to the full individual data
+                    update_elu_with_pdf_data(individual, pending_ids[eid])
+                except (json.JSONDecodeError, OSError):
+                    pass  # fall back to elus.json entry
             with open(out_path, "w", encoding="utf-8") as f:
-                json.dump(e, f, ensure_ascii=False, separators=(",", ":"))
+                json.dump(individual, f, ensure_ascii=False, separators=(",", ":"))
     save_elus(all_elus)
     print(f"  ✓ Saved {len(pending_ids)} individual JSONs + elus.json")
 

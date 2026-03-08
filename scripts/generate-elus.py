@@ -1737,6 +1737,11 @@ def reorganize_data(batch_size: int = 100) -> None:
     - Each individual {id}.json gets ALL data from the elu
     - elus.json is stripped to only list-page fields (~2-3 MB vs 50+ MB)
     - Individual files are written in batches of `batch_size`
+
+    IMPORTANT: If elus.json is already slim (no details_* in hatvp),
+    existing individual JSONs are preserved — only the slim list is rebuilt.
+    This prevents data loss when --reorganize runs after an earlier reorganize
+    already created full individual JSONs.
     """
     all_elus = load_elus()
     if not all_elus:
@@ -1748,9 +1753,22 @@ def reorganize_data(batch_size: int = 100) -> None:
     slim_list: list[dict] = []
     written = 0
 
-    print(f"\n📂 Réorganisation des données ({total} élus)…")
-    print(f"   → Fichiers individuels complets dans {ELUS_DETAIL_DIR}/")
-    print(f"   → elus.json allégé (champs liste uniquement)")
+    # Detect if elus.json has full data (details_*) or is already slim.
+    # Sample the first 100 elus to decide.
+    source_is_full = any(
+        any(k.startswith("details_") for k in (e.get("hatvp") or {}))
+        or e.get("declarations_csv")
+        for e in all_elus[:100]
+    )
+
+    if source_is_full:
+        print(f"\n📂 Réorganisation des données ({total} élus)…")
+        print(f"   → Fichiers individuels complets dans {ELUS_DETAIL_DIR}/")
+        print(f"   → elus.json allégé (champs liste uniquement)")
+    else:
+        print(f"\n📂 Réorganisation des données ({total} élus)…")
+        print(f"   → elus.json déjà allégé — fichiers individuels existants préservés")
+        print(f"   → Reconstruction de la liste slim uniquement")
 
     bp = BatchProgress(
         "📂 Réorganisation",
@@ -1765,16 +1783,45 @@ def reorganize_data(batch_size: int = 100) -> None:
             bp.tick(failed=True)
             continue
 
-        # Clean page footer artifacts from existing detail data
-        cleaned_elu = _clean_detail_artifacts(elu)
+        if source_is_full:
+            out_path = os.path.join(ELUS_DETAIL_DIR, f"{elu_id}.json")
+            base_elu = elu  # default: use elus.json entry
 
-        # Write full individual JSON
-        out_path = os.path.join(ELUS_DETAIL_DIR, f"{elu_id}.json")
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(cleaned_elu, f, ensure_ascii=False, separators=(",", ":"))
-        written += 1
+            # If an individual JSON already exists, use it as the base.
+            # It may have uncapped details_* (from save_elu_detail /
+            # build_full_detail_hatvp) that elus.json's build_resume_hatvp
+            # caps at MAX_DETAIL_ITEMS. Merging preserves the richer data.
+            if os.path.exists(out_path):
+                try:
+                    with open(out_path, "r", encoding="utf-8") as f:
+                        existing = json.load(f)
+                    # Merge top-level fields from elus.json (enrichment, updates)
+                    for k, v in elu.items():
+                        if k != "hatvp" and v is not None:
+                            existing[k] = v
+                    # Merge hatvp: copy counts/totals from elus.json, keep
+                    # richer details_* lists from the existing individual JSON
+                    elu_hatvp = elu.get("hatvp") or {}
+                    existing_hatvp = existing.get("hatvp") or {}
+                    for k, v in elu_hatvp.items():
+                        if not k.startswith("details_"):
+                            existing_hatvp[k] = v
+                        else:
+                            # Only overwrite details if elus.json has MORE items
+                            existing_items = existing_hatvp.get(k, [])
+                            if isinstance(v, list) and len(v) > len(existing_items):
+                                existing_hatvp[k] = v
+                    existing["hatvp"] = existing_hatvp
+                    base_elu = existing
+                except (json.JSONDecodeError, OSError):
+                    pass  # fall back to elus.json entry
 
-        # Build slim entry for list
+            cleaned_elu = _clean_detail_artifacts(base_elu)
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(cleaned_elu, f, ensure_ascii=False, separators=(",", ":"))
+            written += 1
+
+        # Build slim entry for list (always)
         slim_list.append(build_list_entry(elu))
         bp.tick(updated=True)
 
@@ -1785,7 +1832,8 @@ def reorganize_data(batch_size: int = 100) -> None:
         json.dump(slim_list, f, ensure_ascii=False, separators=(",", ":"))
 
     slim_size = os.path.getsize(OUTPUT_JSON) / (1024 * 1024)
-    print(f"\n✅ {written} fichiers individuels générés")
+    if source_is_full:
+        print(f"\n✅ {written} fichiers individuels générés")
     print(f"✅ elus.json allégé : {slim_size:.1f} MB ({len(slim_list)} élus)")
 
 
@@ -2225,10 +2273,12 @@ def main():
 
     bp.finish()
 
-    # ── After full save, reorganize: slim elus.json + full individual JSONs ──
-    if not args.dry_run and all_updated:
-        print("\n📂 Réorganisation automatique…")
-        reorganize_data(batch_size=save_every)
+    # NOTE: Do NOT call reorganize_data() here. The checkpoint saves via
+    # _flush_xml_batch() already wrote full-detail individual JSONs (via
+    # save_elu_detail with build_full_detail_hatvp). Calling reorganize_data()
+    # would overwrite those uncapped individual JSONs with the capped resume
+    # from elus.json, losing items beyond MAX_DETAIL_ITEMS.
+    # The workflow's explicit --reorganize step handles the final slim/split.
 
     # ── PDF fallback for elus with no patrimoine data ─────────────────────────
     pdf_updated = 0
