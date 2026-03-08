@@ -1174,7 +1174,6 @@ def parse_pdf_declaration(pdf_path: str, use_ocr: bool = True) -> dict:
     # Extract text
     text = extract_text_from_pdf(pdf_path, use_ocr=use_ocr)
     result["raw_text_length"] = len(text)
-    result["raw_text"] = text  # Store full text for debugging/completeness
 
     if len(text.strip()) < MIN_TEXT_LENGTH:
         result["extraction_method"] = "failed"
@@ -1609,10 +1608,8 @@ def process_local_pdf(pdf_path: str, use_ocr: bool = True) -> dict | None:
     # Derive a meaningful filename from the PDF
     base = os.path.splitext(os.path.basename(pdf_path))[0]
     out_path = os.path.join(PDF_DECLARATIONS_DIR, f"{base}.json")
-    # Don't save raw_text to the JSON file (too large, only useful for debugging)
-    save_result = {k: v for k, v in result.items() if k != "raw_text"}
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(save_result, f, ensure_ascii=False, indent=2)
+        json.dump(result, f, ensure_ascii=False, indent=2)
     print(f"  ✓ Saved to {out_path}")
 
     return result
