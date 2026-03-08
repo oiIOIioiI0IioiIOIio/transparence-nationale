@@ -284,6 +284,7 @@ const translations: Record<string, Record<Lang, string>> = {
   'profil.revenus_par_an': { fr: 'Revenus annuels déclarés', en: 'Declared annual income' },
   'profil.an': { fr: 'an', en: 'year' },
   'profil.click_detail_mandats': { fr: 'Cliquez pour voir le détail par fonction / mandat', en: 'Click for detail by function / mandate' },
+  'profil.total_all_years': { fr: 'Total cumulé (toutes années)', en: 'Cumulative total (all years)' },
   'profil.no_patrimoine_title': {
     fr: 'Patrimoine non déclaré',
     en: 'No wealth declaration',

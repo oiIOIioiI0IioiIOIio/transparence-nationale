@@ -193,6 +193,49 @@ function deduplicateDetails(items: Record<string, unknown>[]): Record<string, un
 }
 
 /**
+ * Compute per-year revenue totals from all activities and mandates.
+ * Aggregates revenus_annuels from details_activites and details_mandats.
+ * Returns { yearTotals: Map<string, number>, lastYear: string | null, lastYearTotal: number, grandTotal: number }.
+ */
+function computeYearlyRevenues(
+  detailsActivites?: Record<string, unknown>[],
+  detailsMandats?: Record<string, unknown>[],
+): { yearTotals: Map<string, number>; lastYear: string | null; lastYearTotal: number; grandTotal: number } {
+  const yearTotals = new Map<string, number>();
+
+  const processItems = (items?: Record<string, unknown>[]) => {
+    if (!items) return;
+    for (const item of items) {
+      const annuels = item.revenus_annuels as { annee?: string; montant?: number }[] | undefined;
+      if (annuels && Array.isArray(annuels)) {
+        for (const ys of annuels) {
+          if (ys.annee && typeof ys.montant === 'number' && ys.montant > 0) {
+            yearTotals.set(ys.annee, (yearTotals.get(ys.annee) || 0) + ys.montant);
+          }
+        }
+      }
+    }
+  };
+
+  processItems(detailsActivites);
+  processItems(detailsMandats);
+
+  let lastYear: string | null = null;
+  let lastYearTotal = 0;
+  let grandTotal = 0;
+
+  for (const [year, total] of yearTotals.entries()) {
+    grandTotal += total;
+    if (!lastYear || year > lastYear) {
+      lastYear = year;
+      lastYearTotal = total;
+    }
+  }
+
+  return { yearTotals, lastYear, lastYearTotal, grandTotal };
+}
+
+/**
  * Categorize mandats into current and past.
  * A mandat is considered "past" if the HATVP details_mandats indicate it has ended (date_fin).
  */
@@ -419,6 +462,16 @@ export default function ProfilPage() {
   const totalDettes = elu.hatvp?.total_dettes_euro || 0;
   const patrimoineNet = elu.hatvp?.patrimoine_net_euro || 0;
 
+  // Compute per-year revenue totals from activities and mandates
+  const yearlyRevenues = computeYearlyRevenues(
+    elu.hatvp?.details_activites as Record<string, unknown>[] | undefined,
+    elu.hatvp?.details_mandats as Record<string, unknown>[] | undefined,
+  );
+  // If we have year-by-year data, use the last year; otherwise fall back to total
+  const hasYearlyData = yearlyRevenues.lastYear !== null;
+  const lastYearLabel = yearlyRevenues.lastYear;
+  const lastYearRevenu = yearlyRevenues.lastYearTotal;
+
   // Sections that have expandable details
   const expandableSectionKeys = hatvpSections
     .filter(({ key }) => {
@@ -623,10 +676,13 @@ export default function ProfilPage() {
                 {hasRevenusData && (
                   <div className="bg-gradient-to-br from-yellow-600 to-yellow-700 rounded-xl shadow-lg p-4 sm:p-6 text-white">
                     <p className="text-yellow-100 text-xs sm:text-sm font-medium mb-1 sm:mb-2">
-                      Revenus déclarés
+                      {hasYearlyData
+                        ? `${t('profil.revenus_declares', lang)} (${lastYearLabel})`
+                        : t('profil.revenus_declares', lang)
+                      }
                     </p>
                     <p className="text-xl sm:text-3xl font-bold mb-0.5 sm:mb-1">
-                      {formatMoney(elu.revenus || 0)}
+                      {formatMoney(hasYearlyData ? lastYearRevenu : (elu.revenus || 0))}
                     </p>
                     <p className="text-yellow-100 text-[10px] sm:text-xs">
                       {t('profil.bruts_declares', lang)}
@@ -730,36 +786,34 @@ export default function ProfilPage() {
                 </button>
               </div>
 
-              {/* Revenus annuels en premier — total par an, cliquable pour détail */}
+              {/* Revenus annuels en premier — dernier exercice déclaré, cliquable pour détail */}
               {(() => {
                 const totalRevenus = elu.hatvp?.total_revenus_euro || elu.revenus || 0;
-                const detailsRevenus = elu.hatvp?.details_revenus as Record<string, unknown>[] | undefined;
                 const detailsActivites = elu.hatvp?.details_activites as Record<string, unknown>[] | undefined;
                 const detailsMandats = elu.hatvp?.details_mandats as Record<string, unknown>[] | undefined;
 
                 // Build a list of revenue items per function/mandate
                 const revenueByFunction: { label: string; montant: number }[] = [];
-                if (detailsRevenus) {
-                  for (const item of deduplicateDetails(detailsRevenus)) {
-                    const label = (item.denomination || item.employeur || item.organisme || item.description || item.type || 'Revenu') as string;
-                    const montant = (item.remuneration || item.montant || item.valeur || 0) as number;
-                    if (montant > 0) revenueByFunction.push({ label, montant });
-                  }
-                }
                 if (detailsActivites) {
                   for (const item of deduplicateDetails(detailsActivites)) {
                     const label = (item.denomination || item.employeur || item.organisme || 'Activité') as string;
-                    const montant = (item.remuneration || item.montant || 0) as number;
+                    const montant = (item.montant_euro || item.remuneration || item.montant || 0) as number;
                     if (montant > 0) revenueByFunction.push({ label, montant });
                   }
                 }
                 if (detailsMandats) {
                   for (const item of deduplicateDetails(detailsMandats)) {
                     const label = (item.mandat || item.organisme || 'Mandat') as string;
-                    const montant = (item.remuneration || item.montant || 0) as number;
+                    const montant = (item.montant_euro || item.remuneration || item.montant || 0) as number;
                     if (montant > 0) revenueByFunction.push({ label, montant });
                   }
                 }
+
+                // Summary amount: last year's total if yearly data available, otherwise overall total
+                const summaryAmount = hasYearlyData ? lastYearRevenu : totalRevenus;
+                const summaryLabel = hasYearlyData
+                  ? `${t('profil.revenus_par_an', lang)} (${lastYearLabel})`
+                  : t('profil.revenus_par_an', lang);
 
                 const isRevenusExpanded = expandedSections.has('__revenus_annual');
 
@@ -775,9 +829,9 @@ export default function ProfilPage() {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             {isRevenusExpanded ? <ChevronUp size={14} className="text-yellow-400" /> : <ChevronDown size={14} className="text-yellow-400" />}
-                            <span className="text-sm font-semibold text-yellow-300">{t('profil.revenus_par_an', lang)}</span>
+                            <span className="text-sm font-semibold text-yellow-300">{summaryLabel}</span>
                           </div>
-                          <p className="text-lg font-bold text-yellow-200">{formatMoney(totalRevenus)}<span className="text-xs text-yellow-400 font-normal ml-1">/ {t('profil.an', lang)}</span></p>
+                          <p className="text-lg font-bold text-yellow-200">{formatMoney(summaryAmount)}</p>
                         </div>
                         {revenueByFunction.length > 1 && !isRevenusExpanded && (
                           <p className="text-xs text-yellow-500 mt-1 text-left">{t('profil.click_detail_mandats', lang)}</p>
@@ -793,9 +847,16 @@ export default function ProfilPage() {
                           {revenueByFunction.map((rf, idx) => (
                             <div key={idx} className="p-2.5 bg-neutral-900/80 rounded-lg text-sm border border-neutral-700/50 flex items-center justify-between">
                               <span className="text-white font-medium">{rf.label}</span>
-                              <span className="text-yellow-400 font-semibold">{formatMoney(rf.montant)}<span className="text-xs text-yellow-500 font-normal ml-1">/ {t('profil.an', lang)}</span></span>
+                              <span className="text-yellow-400 font-semibold">{formatMoney(rf.montant)}</span>
                             </div>
                           ))}
+                          {/* Total across all years */}
+                          {hasYearlyData && yearlyRevenues.grandTotal > lastYearRevenu && (
+                            <div className="p-2.5 bg-yellow-900/30 rounded-lg text-sm border border-yellow-800 flex items-center justify-between mt-2">
+                              <span className="text-yellow-300 font-semibold">{t('profil.total_all_years', lang)}</span>
+                              <span className="text-yellow-200 font-bold">{formatMoney(yearlyRevenues.grandTotal)}</span>
+                            </div>
+                          )}
                         </motion.div>
                       )}
                     </div>
