@@ -1,13 +1,15 @@
 {
   "source": "pdf",
   "pdf_path": "public/attal-gabriel-dia30320-depute-92.pdf",
-  "parsed_at": "2026-03-07T23:28:52.523273+00:00",
+  "parsed_at": "2026-03-08T03:15:03.169348+00:00",
   "extraction_method": "pdfplumber",
   "raw_text_length": 4402,
   "sections_found": [
     "revenus",
+    "participations_organes",
     "participations_financieres",
     "activites_professionnelles",
+    "fonctions_benevoles",
     "mandats_electifs"
   ],
   "type_detected": "unknown",
