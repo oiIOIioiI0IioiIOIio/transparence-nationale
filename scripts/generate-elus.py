@@ -1762,7 +1762,7 @@ def reorganize_data(batch_size: int = 100) -> None:
     for elu in all_elus:
         elu_id = elu.get("id", "")
         if not elu_id:
-            bp.tick()
+            bp.tick(failed=True)
             continue
 
         # Clean page footer artifacts from existing detail data
