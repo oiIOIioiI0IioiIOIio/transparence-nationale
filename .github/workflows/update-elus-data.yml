@@ -50,10 +50,13 @@ jobs:
       - name: Enrichir les métadonnées depuis le CSV
         run: python scripts/generate-elus.py --enrich-csv-only
 
+      - name: Réorganiser les données (slim elus.json + fichiers individuels)
+        run: python scripts/generate-elus.py --reorganize
+
       - name: Vérifier les changements
         id: check_changes
         run: |
-          if git diff --quiet public/data/elus.json; then
+          if git diff --quiet public/data/elus.json public/data/elus/; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -69,7 +72,9 @@ jobs:
           DATE=$(date -u +"%Y-%m-%d")
           COUNT=${{ steps.check_changes.outputs.count }}
           git add public/data/elus.json
+          git add -f public/data/elus/
           git commit -m "🗳️ Mise à jour données élus — ${DATE} (${COUNT} élus)"
+          git pull --rebase
           git push
 
       - name: Résumé

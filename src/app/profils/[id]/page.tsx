@@ -343,38 +343,27 @@ export default function ProfilPage() {
 
   useEffect(() => {
     const fetchElu = async () => {
-      let detailData: Elu | null = null;
-      let mainData: Elu | null = null;
-
-      // Try per-person JSON first (richer detail data, no detail caps)
+      // Load from per-person JSON (contains ALL data: details + financial summaries)
       try {
         const detailResp = await fetch(`/data/elus/${params.id}.json`);
         if (detailResp.ok) {
-          detailData = await detailResp.json();
+          const data: Elu = await detailResp.json();
+          setElu(data);
+          setLoading(false);
+          return;
         }
       } catch {
-        // Individual file not available
+        // Individual file not available, try fallback
       }
 
-      // Also load from elus.json for financial summary fields
+      // Fallback: load from slim elus.json (list-page data only)
       try {
         const response = await fetch('/data/elus.json');
         const data: Elu[] = await response.json();
-        mainData = data.find((e) => e.id === params.id) || null;
+        const found = data.find((e) => e.id === params.id) || null;
+        setElu(found);
       } catch (error) {
         console.error('Erreur:', error);
-      }
-
-      // Merge: use mainData as base (has financial summaries), overlay detailData (has richer details)
-      if (mainData && detailData) {
-        const merged = { ...mainData };
-        // Overlay richer detail fields from individual file
-        if (detailData.hatvp) {
-          merged.hatvp = { ...mainData.hatvp, ...detailData.hatvp };
-        }
-        setElu(merged);
-      } else {
-        setElu(detailData || mainData || null);
       }
       setLoading(false);
     };
@@ -611,15 +600,15 @@ export default function ProfilPage() {
               </div>
 
               {/* Liens externes */}
-              {(elu.liens.assemblee || elu.liens.hatvp || elu.liens.senat || elu.liens.wikipedia) && (
+              {(elu.liens?.assemblee || elu.liens?.hatvp || elu.liens?.senat || elu.liens?.wikipedia) && (
                 <div className="border-t border-th-border pt-4">
                   <p className="text-sm font-semibold text-th-text-secondary mb-3">
                     Sources & Liens
                   </p>
                   <div className="space-y-2">
-                    {elu.liens.hatvp && (
+                    {elu.liens?.hatvp && (
                       <a
-                        href={elu.liens.hatvp}
+                        href={elu.liens?.hatvp}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-2 text-sm text-red-500 hover:underline"
@@ -628,9 +617,9 @@ export default function ProfilPage() {
                         Fiche HATVP
                       </a>
                     )}
-                    {elu.liens.assemblee && (
+                    {elu.liens?.assemblee && (
                       <a
-                        href={elu.liens.assemblee}
+                        href={elu.liens?.assemblee}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-2 text-sm text-red-500 hover:underline"
@@ -639,9 +628,9 @@ export default function ProfilPage() {
                         Assemblée Nationale
                       </a>
                     )}
-                    {elu.liens.senat && (
+                    {elu.liens?.senat && (
                       <a
-                        href={elu.liens.senat}
+                        href={elu.liens?.senat}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-2 text-sm text-red-500 hover:underline"
@@ -650,9 +639,9 @@ export default function ProfilPage() {
                         Sénat
                       </a>
                     )}
-                    {elu.liens.wikipedia && (
+                    {elu.liens?.wikipedia && (
                       <a
-                        href={elu.liens.wikipedia}
+                        href={elu.liens?.wikipedia}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-2 text-sm text-red-500 hover:underline"
@@ -733,10 +722,10 @@ export default function ProfilPage() {
                         return (
                           <>
                             {t('profil.no_financial.sub', lang)}
-                            {elu.liens.hatvp && (
+                            {elu.liens?.hatvp && (
                               <>
                                 {' '}{t('profil.consult', lang)}{' '}
-                                <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline font-medium text-red-400">
+                                <a href={elu.liens?.hatvp} target="_blank" rel="noopener noreferrer" className="underline font-medium text-red-400">
                                   {t('profil.fiche_hatvp', lang)}
                                 </a>
                                 {' '}{t('profil.for_more', lang)}
@@ -762,10 +751,10 @@ export default function ProfilPage() {
                     </h3>
                     <p className="text-xs sm:text-sm text-yellow-700 dark:text-yellow-200/80">
                       {t('profil.no_financial.sub', lang)}
-                      {elu.liens.hatvp && (
+                      {elu.liens?.hatvp && (
                         <>
                           {' '}{t('profil.consult', lang)}{' '}
-                          <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline font-medium">
+                          <a href={elu.liens?.hatvp} target="_blank" rel="noopener noreferrer" className="underline font-medium">
                             {t('profil.fiche_hatvp', lang)}
                           </a>
                           {' '}{t('profil.for_more', lang)}
@@ -968,8 +957,8 @@ export default function ProfilPage() {
               {/* Source note — simplified */}
               <div className="text-xs text-th-text-muted pt-3 mt-3 border-t border-th-border">
                 {t('profil.see_full', lang)}{' '}
-                {elu.liens.hatvp && (
-                  <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline text-yellow-500">
+                {elu.liens?.hatvp && (
+                  <a href={elu.liens?.hatvp} target="_blank" rel="noopener noreferrer" className="underline text-yellow-500">
                     {t('profil.fiche_hatvp', lang)}
                   </a>
                 )}
@@ -1133,10 +1122,10 @@ export default function ProfilPage() {
                   </div>
                 ))}
               </div>
-              {elu.liens.hatvp && (
+              {elu.liens?.hatvp && (
                 <div className="mt-4 pt-4 border-t">
                   <a
-                    href={elu.liens.hatvp}
+                    href={elu.liens?.hatvp}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 text-sm text-red-500 hover:underline font-medium"

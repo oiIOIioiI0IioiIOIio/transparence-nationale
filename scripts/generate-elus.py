@@ -126,6 +126,8 @@ def parse_args():
                    help="Enrichir elus.json depuis le CSV local (sans télécharger de XMLs)")
     p.add_argument("--split-elus",       action="store_true",
                    help="Générer les fichiers JSON par personne (public/data/elus/{id}.json) depuis elus.json")
+    p.add_argument("--reorganize",       action="store_true",
+                   help="Réorganiser les données: fichiers individuels complets + elus.json allégé pour la liste")
     return p.parse_args()
 
 
@@ -1598,6 +1600,111 @@ def save_elus(elus: list[dict]) -> None:
     print(f"✓ {OUTPUT_JSON} mis à jour ({len(elus)} élus)")
 
 
+# ── Fields needed by the list page (/liste) ──────────────────────────────────
+# PersonCard displays: id, nom, prenom, fonction, region, groupe, patrimoine,
+#   revenus, photo_url, hatvp.nb_declarations_hatvp, declarations_csv (count).
+# SearchBar filters on: nom, prenom, fonction, region, groupe, parti, mandats,
+#   types_mandat. Sorts by: nom, patrimoine, revenus.
+LIST_PAGE_FIELDS = {
+    "id", "nom", "prenom", "fonction", "region", "groupe", "parti",
+    "mandats", "types_mandat", "patrimoine", "revenus", "immobilier",
+    "placements_montant", "photo", "photo_url",
+}
+
+# HATVP summary fields needed by list page (counts + aggregates, NO details_*)
+LIST_HATVP_FIELDS = {
+    "nb_declarations_hatvp", "hatvp_scraped_at",
+    "patrimoine_net_euro", "total_actif_brut_euro", "total_dettes_euro",
+    "total_revenus_euro", "last_year_revenus", "last_year_label",
+    "total_revenus_all_years",
+}
+
+
+def build_list_entry(elu: dict) -> dict:
+    """Build a minimal entry for elus.json containing only list-page fields.
+    All detail data (details_*, declarations_csv, liens, etc.) is stripped."""
+    entry: dict = {}
+    for k in LIST_PAGE_FIELDS:
+        v = elu.get(k)
+        if v is not None and v != "" and v != 0 and v != []:
+            entry[k] = v
+    # Always include id, nom, prenom, fonction
+    for k in ("id", "nom", "prenom", "fonction"):
+        if k not in entry:
+            entry[k] = elu.get(k, "")
+
+    # Slim HATVP: only counts + aggregates
+    hatvp = elu.get("hatvp")
+    if hatvp and isinstance(hatvp, dict):
+        slim_hatvp: dict = {}
+        for k, v in hatvp.items():
+            if k in LIST_HATVP_FIELDS:
+                if v is not None and v != "" and v != 0:
+                    slim_hatvp[k] = v
+            elif k.startswith("nb_") and isinstance(v, (int, float)) and v > 0:
+                slim_hatvp[k] = v
+            elif k.startswith("valeur_") and k.endswith("_euro") and isinstance(v, (int, float)) and v > 0:
+                slim_hatvp[k] = v
+        if slim_hatvp:
+            entry["hatvp"] = slim_hatvp
+
+    # Declaration count for display (avoid storing full declarations_csv)
+    decl_csv = elu.get("declarations_csv")
+    if decl_csv and isinstance(decl_csv, list) and len(decl_csv) > 0:
+        entry["nb_declarations_csv"] = len(decl_csv)
+
+    return entry
+
+
+def reorganize_data(batch_size: int = 100) -> None:
+    """Reorganize data: write full individual JSONs + slim elus.json.
+
+    - Each individual {id}.json gets ALL data from the elu
+    - elus.json is stripped to only list-page fields (~2-3 MB vs 50+ MB)
+    - Individual files are written in batches of `batch_size`
+    """
+    all_elus = load_elus()
+    if not all_elus:
+        print("⚠ elus.json vide ou introuvable.")
+        return
+
+    os.makedirs(ELUS_DETAIL_DIR, exist_ok=True)
+    total = len(all_elus)
+    slim_list: list[dict] = []
+    written = 0
+
+    print(f"\n📂 Réorganisation des données ({total} élus)…")
+    print(f"   → Fichiers individuels complets dans {ELUS_DETAIL_DIR}/")
+    print(f"   → elus.json allégé (champs liste uniquement)")
+
+    for batch_start in range(0, total, batch_size):
+        batch = all_elus[batch_start:batch_start + batch_size]
+        for elu in batch:
+            elu_id = elu.get("id", "")
+            if not elu_id:
+                continue
+
+            # Write full individual JSON
+            out_path = os.path.join(ELUS_DETAIL_DIR, f"{elu_id}.json")
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(elu, f, ensure_ascii=False, separators=(",", ":"))
+            written += 1
+
+            # Build slim entry for list
+            slim_list.append(build_list_entry(elu))
+
+        batch_end = min(batch_start + batch_size, total)
+        print(f"   ✓ Batch {batch_start + 1}–{batch_end} / {total}")
+
+    # Save slim elus.json
+    with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
+        json.dump(slim_list, f, ensure_ascii=False, separators=(",", ":"))
+
+    slim_size = os.path.getsize(OUTPUT_JSON) / (1024 * 1024)
+    print(f"\n✅ {written} fichiers individuels générés")
+    print(f"✅ elus.json allégé : {slim_size:.1f} MB ({len(slim_list)} élus)")
+
+
 def find_elu_by_name(elus: list[dict], query: str) -> dict | None:
     q = normalize_name(query)
     for e in elus:
@@ -1827,6 +1934,11 @@ def main():
         print(f"✅ {count} fichiers JSON générés dans {ELUS_DETAIL_DIR}")
         return
 
+    # ── Mode reorganize: full individual JSONs + slim elus.json ───────────────
+    if args.reorganize:
+        reorganize_data(batch_size=100)
+        return
+
     # ── Charger le XML global ──────────────────────────────────────────────────
     print("\n📥 Chargement du XML global HATVP…")
     xml_root = load_declarations_xml(force_refresh=args.refresh_xml, delay=args.delay)
@@ -1997,6 +2109,10 @@ def main():
 
         enrich_elus_from_csv(all_elus, csv_index)
         save_elus(all_elus)
+
+        # After full save, reorganize: slim elus.json + full individual JSONs
+        print("\n📂 Réorganisation automatique…")
+        reorganize_data(batch_size=100)
 
     # ── PDF fallback for elus with no patrimoine data ─────────────────────────
     pdf_updated = 0

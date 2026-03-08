@@ -12,17 +12,18 @@ export interface Elu {
   prenom: string;
   fonction: string;
   region?: string;
-  revenus: number;              // €
-  patrimoine: number;           // €
-  immobilier: number;           // € (détail patrimoine)
-  placements: number[] | number; // Legacy: was stored as array, now as number. Use placements_montant for new data.
+  revenus?: number;              // €
+  patrimoine?: number;           // €
+  immobilier?: number;           // € (détail patrimoine)
+  placements?: number[] | number; // Legacy: was stored as array, now as number. Use placements_montant for new data.
   placements_montant?: number;  // €
-  mandats: string[];            // ["Député du Rhône", ...]
+  mandats?: string[];            // ["Député du Rhône", ...]
   types_mandat?: string[];      // ["depute", "senateur", ...]
-  photo: string;                // "/photos/jean-dupont.jpg"
+  photo?: string;                // "/photos/jean-dupont.jpg"
   photo_url?: string;           // URL externe (assemblée, sénat)
   declarations_csv?: Declaration[];
-  liens: {
+  nb_declarations_csv?: number;   // Count of declarations (used in slim elus.json)
+  liens?: {
     assemblee?: string;
     hatvp?: string;
     senat?: string;
