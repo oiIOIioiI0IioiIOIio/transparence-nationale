@@ -6,9 +6,41 @@
   html {
     @apply scroll-smooth;
   }
-  
+
+  /* Light mode (default) */
+  :root {
+    --th-bg: #fafafa;
+    --th-bg-secondary: #f5f5f5;
+    --th-card: #ffffff;
+    --th-text: #171717;
+    --th-text-secondary: #525252;
+    --th-text-muted: #737373;
+    --th-border: #e5e5e5;
+    --th-card-hover-shadow: rgba(0, 0, 0, 0.08);
+    --th-tooltip-bg: #ffffff;
+    --th-tooltip-border: #e5e5e5;
+    --th-tooltip-text: #171717;
+  }
+
+  /* Dark mode */
+  .dark {
+    --th-bg: #0a0a0a;
+    --th-bg-secondary: #171717;
+    --th-card: #262626;
+    --th-text: #ffffff;
+    --th-text-secondary: #d4d4d4;
+    --th-text-muted: #a3a3a3;
+    --th-border: #404040;
+    --th-card-hover-shadow: rgba(220, 38, 38, 0.15);
+    --th-tooltip-bg: #262626;
+    --th-tooltip-border: #404040;
+    --th-tooltip-text: #ffffff;
+  }
+
   body {
-    @apply bg-neutral-950 min-h-screen text-white;
+    @apply min-h-screen;
+    background-color: var(--th-bg);
+    color: var(--th-text);
   }
 }
 

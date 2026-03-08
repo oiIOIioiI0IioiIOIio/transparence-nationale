@@ -12,6 +12,16 @@ module.exports = {
         border: 'hsl(var(--border))',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
+        // Theme-aware semantic colors (light/dark via CSS custom properties)
+        th: {
+          bg: 'var(--th-bg)',
+          'bg-secondary': 'var(--th-bg-secondary)',
+          card: 'var(--th-card)',
+          text: 'var(--th-text)',
+          'text-secondary': 'var(--th-text-secondary)',
+          'text-muted': 'var(--th-text-muted)',
+          border: 'var(--th-border)',
+        },
         // Pokédex-inspired palette
         pokedex: {
           red: '#DC2626',

@@ -286,8 +286,8 @@ function DetailItemRenderer({ item, formatMoney }: { item: Record<string, unknow
   });
 
   return (
-    <div className="p-2.5 bg-neutral-900/80 rounded-lg text-sm border border-neutral-700/50">
-      {primaryValue && <p className="text-white font-medium">{primaryValue}</p>}
+    <div className="p-2.5 bg-th-bg-secondary/80 rounded-lg text-sm border border-th-border/50">
+      {primaryValue && <p className="text-th-text font-medium">{primaryValue}</p>}
       {otherFields.length > 0 && (
         <div className="mt-1 space-y-0.5">
           {otherFields.map(([key, val]) => {
@@ -298,10 +298,10 @@ function DetailItemRenderer({ item, formatMoney }: { item: Record<string, unknow
             if (key === 'revenus_annuels' && Array.isArray(val)) {
               return (
                 <div key={key} className="mt-1">
-                  <p className="text-xs text-neutral-500 mb-0.5">{label} :</p>
+                  <p className="text-xs text-th-text-muted mb-0.5">{label} :</p>
                   <div className="ml-2 space-y-0.5">
                     {(val as { annee?: string; montant?: number }[]).map((ys, idx) => (
-                      <p key={idx} className="text-xs text-yellow-400 font-semibold">
+                      <p key={idx} className="text-xs text-yellow-500 font-semibold">
                         {ys.annee} : {typeof ys.montant === 'number' ? formatMoney(ys.montant) : '—'}
                       </p>
                     ))}
@@ -312,8 +312,8 @@ function DetailItemRenderer({ item, formatMoney }: { item: Record<string, unknow
 
             const display = isMoney && typeof val === 'number' ? formatMoney(val) : String(val);
             return (
-              <p key={key} className={`text-xs ${isMoney ? 'text-yellow-400 font-semibold' : 'text-neutral-400'}`}>
-                <span className="text-neutral-500">{label} :</span> {display}
+              <p key={key} className={`text-xs ${isMoney ? 'text-yellow-500 font-semibold' : 'text-th-text-muted'}`}>
+                <span className="text-th-text-muted">{label} :</span> {display}
               </p>
             );
           })}
@@ -387,7 +387,7 @@ export default function ProfilPage() {
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-red-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-neutral-400">Chargement du profil...</p>
+          <p className="text-th-text-muted">Chargement du profil...</p>
         </div>
       </div>
     );
@@ -397,8 +397,8 @@ export default function ProfilPage() {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="text-center py-16">
-          <User size={64} className="text-neutral-600 mx-auto mb-4" />
-          <h3 className="text-2xl font-bold text-white mb-2">
+          <User size={64} className="text-th-text-muted mx-auto mb-4" />
+          <h3 className="text-2xl font-bold text-th-text mb-2">
             Élu non trouvé
           </h3>
           <button
@@ -492,7 +492,7 @@ export default function ProfilPage() {
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         onClick={() => router.push('/liste')}
-        className="flex items-center gap-2 text-neutral-400 hover:text-red-500 mb-6 sm:mb-8 transition-colors"
+        className="flex items-center gap-2 text-th-text-muted hover:text-red-500 mb-6 sm:mb-8 transition-colors"
       >
         <ArrowLeft size={20} />
         <span className="font-medium">Retour à la galerie</span>
@@ -506,9 +506,9 @@ export default function ProfilPage() {
           transition={{ duration: 0.4 }}
           className="lg:col-span-1"
         >
-          <div className="bg-neutral-800 rounded-xl shadow-lg overflow-hidden sticky top-20 sm:top-24 border-2 border-red-700">
+          <div className="bg-th-card rounded-xl shadow-lg overflow-hidden sticky top-20 sm:top-24 border-2 border-red-700">
             {/* Photo — affichée en entier */}
-            <div className="relative aspect-[3/4] max-h-80 sm:max-h-96 bg-gradient-to-br from-red-900/40 to-neutral-800">
+            <div className="relative aspect-[3/4] max-h-80 sm:max-h-96 bg-gradient-to-br from-red-100 dark:from-red-900/40 to-gray-50 dark:to-neutral-800">
               {photoSrc ? (
                 <Image
                   src={photoSrc}
@@ -520,14 +520,14 @@ export default function ProfilPage() {
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
-                  <User size={100} className="text-neutral-600" />
+                  <User size={100} className="text-th-text-muted" />
                 </div>
               )}
             </div>
 
             {/* Infos de base */}
             <div className="p-4 sm:p-6">
-              <h1 className="text-xl sm:text-2xl font-bold text-white mb-2">
+              <h1 className="text-xl sm:text-2xl font-bold text-th-text mb-2">
                 {elu.prenom} {elu.nom}
               </h1>
               
@@ -535,8 +535,8 @@ export default function ProfilPage() {
                 <div className="flex items-start gap-2 sm:gap-3">
                   <Briefcase size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-xs text-neutral-500">Fonction</p>
-                    <p className="font-semibold text-white text-sm sm:text-base">{elu.fonction}</p>
+                    <p className="text-xs text-th-text-muted">Fonction</p>
+                    <p className="font-semibold text-th-text text-sm sm:text-base">{elu.fonction}</p>
                   </div>
                 </div>
                 
@@ -544,8 +544,8 @@ export default function ProfilPage() {
                   <div className="flex items-start gap-2 sm:gap-3">
                     <MapPin size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-xs text-neutral-500">Département</p>
-                      <p className="font-semibold text-white text-sm sm:text-base">{elu.region}</p>
+                      <p className="text-xs text-th-text-muted">Département</p>
+                      <p className="font-semibold text-th-text text-sm sm:text-base">{elu.region}</p>
                     </div>
                   </div>
                 )}
@@ -554,8 +554,8 @@ export default function ProfilPage() {
                   <div className="flex items-start gap-2 sm:gap-3">
                     <Users size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-xs text-neutral-500">Groupe politique</p>
-                      <p className="font-semibold text-white text-sm sm:text-base">{elu.groupe}</p>
+                      <p className="text-xs text-th-text-muted">Groupe politique</p>
+                      <p className="font-semibold text-th-text text-sm sm:text-base">{elu.groupe}</p>
                     </div>
                   </div>
                 )}
@@ -564,8 +564,8 @@ export default function ProfilPage() {
                   <div className="flex items-start gap-2 sm:gap-3">
                     <Building2 size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-xs text-neutral-500">Parti</p>
-                      <p className="font-semibold text-white text-sm sm:text-base">{elu.parti}</p>
+                      <p className="text-xs text-th-text-muted">Parti</p>
+                      <p className="font-semibold text-th-text text-sm sm:text-base">{elu.parti}</p>
                     </div>
                   </div>
                 )}
@@ -574,7 +574,7 @@ export default function ProfilPage() {
                   <div className="flex items-start gap-2 sm:gap-3">
                     <Landmark size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-xs text-neutral-500">Type de mandat</p>
+                      <p className="text-xs text-th-text-muted">Type de mandat</p>
                       <div className="flex flex-wrap gap-1 mt-1">
                         {elu.types_mandat.map((tm) => (
                           <span
@@ -594,8 +594,8 @@ export default function ProfilPage() {
 
               {/* Liens externes */}
               {(elu.liens.assemblee || elu.liens.hatvp || elu.liens.senat || elu.liens.wikipedia) && (
-                <div className="border-t border-neutral-700 pt-4">
-                  <p className="text-sm font-semibold text-neutral-300 mb-3">
+                <div className="border-t border-th-border pt-4">
+                  <p className="text-sm font-semibold text-th-text-secondary mb-3">
                     Sources & Liens
                   </p>
                   <div className="space-y-2">
@@ -697,14 +697,14 @@ export default function ProfilPage() {
 
             {/* Patrimoine explanation when missing */}
             {!hasPatrimoineData && (
-              <div className="bg-neutral-800/60 border border-neutral-700 rounded-xl p-4 sm:p-5">
+              <div className="bg-th-card/60 border border-th-border rounded-xl p-4 sm:p-5">
                 <div className="flex items-start gap-3">
-                  <Scale size={20} className="text-neutral-400 mt-0.5 flex-shrink-0" />
+                  <Scale size={20} className="text-th-text-muted mt-0.5 flex-shrink-0" />
                   <div>
-                    <h3 className="text-sm sm:text-base font-semibold text-neutral-300 mb-1">
+                    <h3 className="text-sm sm:text-base font-semibold text-th-text-secondary mb-1">
                       {t('profil.no_patrimoine_title', lang)}
                     </h3>
-                    <p className="text-xs sm:text-sm text-neutral-400">
+                    <p className="text-xs sm:text-sm text-th-text-muted">
                       {(() => {
                         if (hasDspDeclarations) {
                           return t('profil.patrimoine_en_cours', lang);
@@ -766,10 +766,10 @@ export default function ProfilPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.15 }}
-              className="bg-neutral-800 rounded-xl shadow-lg p-4 sm:p-6 border border-neutral-700"
+              className="bg-th-card rounded-xl shadow-lg p-4 sm:p-6 border border-th-border"
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+                <h3 className="text-lg sm:text-xl font-bold text-th-text flex items-center gap-2">
                   <TrendingUp size={20} className="text-red-500" />
                   {t('profil.synthese', lang)}
                 </h3>
@@ -831,7 +831,7 @@ export default function ProfilPage() {
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            {isRevenusExpanded ? <ChevronUp size={14} className="text-yellow-400" /> : <ChevronDown size={14} className="text-yellow-400" />}
+                            {isRevenusExpanded ? <ChevronUp size={14} className="text-yellow-500" /> : <ChevronDown size={14} className="text-yellow-500" />}
                             <span className="text-sm font-semibold text-yellow-300">{summaryLabel}</span>
                           </div>
                           <p className="text-lg font-bold text-yellow-200">{formatMoney(summaryAmount)}</p>
@@ -848,9 +848,9 @@ export default function ProfilPage() {
                           className="mt-1 ml-4 space-y-1 pb-1"
                         >
                           {revenueByFunction.map((rf, idx) => (
-                            <div key={idx} className="p-2.5 bg-neutral-900/80 rounded-lg text-sm border border-neutral-700/50 flex items-center justify-between">
-                              <span className="text-white font-medium">{rf.label}</span>
-                              <span className="text-yellow-400 font-semibold">{formatMoney(rf.montant)}</span>
+                            <div key={idx} className="p-2.5 bg-th-bg-secondary/80 rounded-lg text-sm border border-th-border/50 flex items-center justify-between">
+                              <span className="text-th-text font-medium">{rf.label}</span>
+                              <span className="text-yellow-500 font-semibold">{formatMoney(rf.montant)}</span>
                             </div>
                           ))}
                           {/* Total across all years */}
@@ -879,14 +879,14 @@ export default function ProfilPage() {
                   )}
                   {totalDettes > 0 && (
                     <div className="p-3 bg-yellow-900/30 rounded-lg border border-yellow-800">
-                      <p className="text-xs text-yellow-400 font-medium">{t('profil.dettes_emprunts', lang)}</p>
+                      <p className="text-xs text-yellow-500 font-medium">{t('profil.dettes_emprunts', lang)}</p>
                       <p className="text-lg font-bold text-yellow-200">-{formatMoney(totalDettes)}</p>
                     </div>
                   )}
                   {patrimoineNet > 0 && (
-                    <div className="p-3 bg-neutral-700/50 rounded-lg border border-neutral-600">
-                      <p className="text-xs text-neutral-400 font-medium">{t('profil.patrimoine_net', lang)}</p>
-                      <p className="text-lg font-bold text-white">{formatMoney(patrimoineNet)}</p>
+                    <div className="p-3 bg-th-bg-secondary/50 rounded-lg border border-th-border">
+                      <p className="text-xs text-th-text-muted font-medium">{t('profil.patrimoine_net', lang)}</p>
+                      <p className="text-lg font-bold text-th-text">{formatMoney(patrimoineNet)}</p>
                     </div>
                   )}
                 </div>
@@ -907,8 +907,8 @@ export default function ProfilPage() {
                       <button
                         onClick={() => hasDetails && toggleSection(key)}
                         className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors ${
-                          isExpanded ? 'bg-neutral-700/60' : 'bg-neutral-900/60'
-                        } ${hasDetails ? 'cursor-pointer hover:bg-neutral-700/50' : 'cursor-default'}`}
+                          isExpanded ? 'bg-th-bg-secondary/60' : 'bg-th-bg-secondary/60'
+                        } ${hasDetails ? 'cursor-pointer hover:bg-th-bg-secondary/50' : 'cursor-default'}`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           {hasDetails ? (
@@ -920,12 +920,12 @@ export default function ProfilPage() {
                               <div className="w-2 h-2 rounded-full bg-red-500/30" />
                             </div>
                           )}
-                          <span className="text-sm text-neutral-300 truncate text-left">{label}</span>
+                          <span className="text-sm text-th-text-secondary truncate text-left">{label}</span>
                         </div>
                         <div className="text-right flex-shrink-0 ml-2">
-                          <span className="text-sm font-bold text-white">{dedupCount}</span>
+                          <span className="text-sm font-bold text-th-text">{dedupCount}</span>
                           {value != null && value > 0 && (
-                            <p className="text-xs text-neutral-500">{formatMoney(value)}</p>
+                            <p className="text-xs text-th-text-muted">{formatMoney(value)}</p>
                           )}
                         </div>
                       </button>
@@ -948,10 +948,10 @@ export default function ProfilPage() {
               </div>
 
               {/* Source note — simplified */}
-              <div className="text-xs text-neutral-500 pt-3 mt-3 border-t border-neutral-700">
+              <div className="text-xs text-th-text-muted pt-3 mt-3 border-t border-th-border">
                 {t('profil.see_full', lang)}{' '}
                 {elu.liens.hatvp && (
-                  <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline text-yellow-400">
+                  <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline text-yellow-500">
                     {t('profil.fiche_hatvp', lang)}
                   </a>
                 )}
@@ -965,14 +965,14 @@ export default function ProfilPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.17 }}
-              className="bg-neutral-800 rounded-xl shadow-lg p-4 sm:p-6 border border-neutral-700"
+              className="bg-th-card rounded-xl shadow-lg p-4 sm:p-6 border border-th-border"
             >
-              <h3 className="text-base sm:text-lg font-bold text-white mb-3 flex items-center gap-2">
+              <h3 className="text-base sm:text-lg font-bold text-th-text mb-3 flex items-center gap-2">
                 <FileText size={18} className="text-red-500" />
                 Observations du déclarant
               </h3>
               {(elu.hatvp.details_observations as Record<string, unknown>[]).map((obs, idx) => (
-                <p key={idx} className="text-sm text-neutral-300 italic">
+                <p key={idx} className="text-sm text-th-text-secondary italic">
                   {String(obs.description || '')}
                 </p>
               ))}
@@ -992,9 +992,9 @@ export default function ProfilPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.3 }}
-              className="bg-neutral-800 rounded-xl shadow-lg p-4 sm:p-6 border border-neutral-700"
+              className="bg-th-card rounded-xl shadow-lg p-4 sm:p-6 border border-th-border"
             >
-              <h3 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <h3 className="text-lg sm:text-xl font-bold text-th-text mb-4 flex items-center gap-2">
                 <Briefcase size={20} className="text-red-500" />
                 {t('profil.mandats', lang)}
               </h3>
@@ -1016,10 +1016,10 @@ export default function ProfilPage() {
                           {currentMandats.map((mandat, index) => (
                             <div
                               key={index}
-                              className="flex items-center gap-3 p-3 bg-neutral-900/60 rounded-lg"
+                              className="flex items-center gap-3 p-3 bg-th-bg-secondary/60 rounded-lg"
                             >
                               <div className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0" />
-                              <span className="text-sm text-neutral-300">{mandat}</span>
+                              <span className="text-sm text-th-text-secondary">{mandat}</span>
                             </div>
                           ))}
                         </div>
@@ -1030,7 +1030,7 @@ export default function ProfilPage() {
                       <div>
                         <button
                           onClick={() => setShowPastMandats(!showPastMandats)}
-                          className="flex items-center gap-2 text-sm font-semibold text-neutral-400 hover:text-neutral-200 transition-colors mb-2"
+                          className="flex items-center gap-2 text-sm font-semibold text-th-text-muted hover:text-th-text-secondary transition-colors mb-2"
                         >
                           {showPastMandats ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                           Passés ({pastMandats.length})
@@ -1045,10 +1045,10 @@ export default function ProfilPage() {
                               {pastMandats.map((mandat, index) => (
                                 <div
                                   key={index}
-                                  className="flex items-center gap-3 p-3 bg-neutral-900/40 rounded-lg"
+                                  className="flex items-center gap-3 p-3 bg-th-bg-secondary/40 rounded-lg"
                                 >
-                                  <div className="w-2 h-2 bg-neutral-500 rounded-full flex-shrink-0" />
-                                  <span className="text-sm text-neutral-400">{mandat}</span>
+                                  <div className="w-2 h-2 bg-th-text-muted rounded-full flex-shrink-0" />
+                                  <span className="text-sm text-th-text-muted">{mandat}</span>
                                 </div>
                               ))}
                             </div>
@@ -1068,9 +1068,9 @@ export default function ProfilPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.4 }}
-              className="bg-neutral-800 rounded-xl shadow-lg p-4 sm:p-6 border border-neutral-700"
+              className="bg-th-card rounded-xl shadow-lg p-4 sm:p-6 border border-th-border"
             >
-              <h3 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <h3 className="text-lg sm:text-xl font-bold text-th-text mb-4 flex items-center gap-2">
                 <FileText size={20} className="text-red-500" />
                 Déclarations HATVP
               </h3>
@@ -1078,7 +1078,7 @@ export default function ProfilPage() {
                 {elu.declarations_csv.map((decl, index) => (
                   <div
                     key={index}
-                    className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 p-3 sm:p-4 bg-neutral-900/60 rounded-lg"
+                    className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 p-3 sm:p-4 bg-th-bg-secondary/60 rounded-lg"
                   >
                     <div className="flex-shrink-0">
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold ${
@@ -1090,23 +1090,23 @@ export default function ProfilPage() {
                       </span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-white">
+                      <p className="text-sm font-medium text-th-text">
                         {DOC_TYPE_LABELS[decl.type] || decl.type}
                       </p>
                       {decl.qualite && (
-                        <p className="text-xs text-neutral-500 mt-0.5">
+                        <p className="text-xs text-th-text-muted mt-0.5">
                           En qualité de : {decl.qualite}
                         </p>
                       )}
                       <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-1">
                         {decl.date_publication && (
-                          <span className="flex items-center gap-1 text-xs text-neutral-500">
+                          <span className="flex items-center gap-1 text-xs text-th-text-muted">
                             <Calendar size={12} />
                             Publiée le {formatDate(decl.date_publication)}
                           </span>
                         )}
                         {decl.date_depot && (
-                          <span className="text-xs text-neutral-500">
+                          <span className="text-xs text-th-text-muted">
                             Déposée le {formatDate(decl.date_depot)}
                           </span>
                         )}
@@ -1137,9 +1137,9 @@ export default function ProfilPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.5 }}
-            className="bg-neutral-900/60 rounded-xl p-4 text-xs text-neutral-500"
+            className="bg-th-bg-secondary/60 rounded-xl p-4 text-xs text-th-text-muted"
           >
-            <p className="font-medium text-neutral-400 mb-1">Sources des données</p>
+            <p className="font-medium text-th-text-muted mb-1">Sources des données</p>
             <p>
               Données issues de la{' '}
               <a href="https://www.hatvp.fr/open-data/" target="_blank" rel="noopener noreferrer" className="underline">
