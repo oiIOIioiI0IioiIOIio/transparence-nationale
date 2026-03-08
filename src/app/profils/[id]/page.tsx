@@ -476,7 +476,7 @@ export default function ProfilPage() {
   let lastYearRevenu: number;
   let yearlyRevenuesGrandTotal: number;
 
-  if (precomputedLastYear && typeof precomputedLastYearRevenus === 'number') {
+  if (precomputedLastYear && typeof precomputedLastYearRevenus === 'number' && precomputedLastYearRevenus > 0) {
     hasYearlyData = true;
     lastYearLabel = precomputedLastYear;
     lastYearRevenu = precomputedLastYearRevenus;

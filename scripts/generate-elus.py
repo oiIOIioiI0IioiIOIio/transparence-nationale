@@ -1557,10 +1557,12 @@ def build_full_detail_hatvp(data: dict) -> dict:
                     year_totals[annee] = year_totals.get(annee, 0.0) + montant
 
     if year_totals:
-        last_year = max(year_totals.keys(), key=lambda y: int(y) if y.isdigit() else 0)
-        resume["last_year_revenus"] = year_totals[last_year]
-        resume["last_year_label"] = last_year
-        resume["total_revenus_all_years"] = sum(year_totals.values())
+        valid_years = [y for y in year_totals.keys() if y.isdigit()]
+        if valid_years:
+            last_year = max(valid_years, key=lambda y: int(y))
+            resume["last_year_revenus"] = year_totals[last_year]
+            resume["last_year_label"] = last_year
+            resume["total_revenus_all_years"] = sum(year_totals.values())
 
     return resume
 

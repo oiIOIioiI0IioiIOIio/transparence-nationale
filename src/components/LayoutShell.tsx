@@ -61,7 +61,7 @@ export default function LayoutShell({ children }: { children: React.ReactNode })
               {/* Language toggle */}
               <button
                 onClick={() => setLang(lang === 'fr' ? 'en' : 'fr')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold border-2 border-yellow-500 text-yellow-500 hover:bg-yellow-500 hover:text-white transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold border-2 border-yellow-500 text-yellow-500 hover:bg-yellow-500 hover:text-neutral-900 transition-colors"
                 aria-label={lang === 'fr' ? 'Switch to English' : 'Passer en français'}
               >
                 {lang === 'fr' ? 'EN' : 'FR'}
