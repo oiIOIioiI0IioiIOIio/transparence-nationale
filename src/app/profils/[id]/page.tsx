@@ -24,6 +24,9 @@ const MANDAT_LABEL_KEYS: Record<string, string> = {
   autre: 'mandat_label.autre',
 };
 
+// Mandate types that require patrimoine declaration (government + HATVP college members)
+const PATRIMOINE_REQUIRED_MANDATE_TYPES = ['gouvernement', 'president'];
+
 const DOC_TYPE_LABELS: Record<string, string> = {
   DSP: 'Déclaration de Situation Patrimoniale',
   DSPM: 'DSP — Modification',
@@ -126,10 +129,20 @@ const DETAIL_FIELD_LABELS: Record<string, string> = {
   solde: 'Solde',
   montant: 'Montant',
   remuneration: 'Rémunération',
+  profession_conjoint: 'Profession du·de la conjoint·e',
+  employeur_conjoint: 'Employeur du·de la conjoint·e',
+  type_revenu: 'Type de revenu',
+  capital_restant_du: 'Capital restant dû',
+  type_bien: 'Type de bien',
+  localisation: 'Localisation',
+  surface_m2: 'Surface (m²)',
+  type_instrument: 'Type d\'instrument',
+  salaire_euro: 'Salaire',
+  revenus_annuels: 'Revenus annuels',
 };
 
 // Fields that represent money amounts (displayed with formatMoney)
-const MONEY_FIELDS = new Set(['valeur', 'solde', 'montant', 'remuneration']);
+const MONEY_FIELDS = new Set(['valeur', 'solde', 'montant', 'remuneration', 'capital_restant_du', 'salaire_euro']);
 
 /**
  * Deduplicate an array of detail items by comparing their non-financial string fields.
@@ -257,29 +270,40 @@ export default function ProfilPage() {
 
   useEffect(() => {
     const fetchElu = async () => {
+      let detailData: Elu | null = null;
+      let mainData: Elu | null = null;
+
+      // Try per-person JSON first (richer detail data, no detail caps)
       try {
-        // Try per-person JSON first (richer data, no detail caps)
         const detailResp = await fetch(`/data/elus/${params.id}.json`);
         if (detailResp.ok) {
-          const detail: Elu = await detailResp.json();
-          setElu(detail);
-          setLoading(false);
-          return;
+          detailData = await detailResp.json();
         }
       } catch {
-        // Fallback below
+        // Individual file not available
       }
+
+      // Also load from elus.json for financial summary fields
       try {
-        // Fallback to full elus.json
         const response = await fetch('/data/elus.json');
         const data: Elu[] = await response.json();
-        const found = data.find((e) => e.id === params.id);
-        setElu(found || null);
+        mainData = data.find((e) => e.id === params.id) || null;
       } catch (error) {
         console.error('Erreur:', error);
-      } finally {
-        setLoading(false);
       }
+
+      // Merge: use mainData as base (has financial summaries), overlay detailData (has richer details)
+      if (mainData && detailData) {
+        const merged = { ...mainData };
+        // Overlay richer detail fields from individual file
+        if (detailData.hatvp) {
+          merged.hatvp = { ...mainData.hatvp, ...detailData.hatvp };
+        }
+        setElu(merged);
+      } else {
+        setElu(detailData || mainData || null);
+      }
+      setLoading(false);
     };
 
     fetchElu();
@@ -340,7 +364,6 @@ export default function ProfilPage() {
   const hasFinancialData = (elu.patrimoine || 0) > 0 || (elu.revenus || 0) > 0 || (elu.immobilier || 0) > 0;
   const placementsMontant = elu.placements_montant || (typeof elu.placements === 'number' ? elu.placements : 0);
   const photoSrc = elu.photo_url || (elu.photo !== '/photos/placeholder.jpg' ? elu.photo : '');
-  const nbDeclarations = elu.hatvp?.nb_declarations_hatvp || elu.declarations_csv?.length || 0;
 
   // Collecter les sections HATVP détaillées qui ont des données
   // Exclure les champs meta (nb_declarations_hatvp) et ne garder que les sections de contenu
@@ -476,15 +499,7 @@ export default function ProfilPage() {
                   </div>
                 )}
 
-                {nbDeclarations > 0 && (
-                  <div className="flex items-start gap-2 sm:gap-3">
-                    <FileText size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-xs text-neutral-500">Déclarations HATVP</p>
-                      <p className="font-semibold text-white text-sm sm:text-base">{nbDeclarations} déclaration(s)</p>
-                    </div>
-                  </div>
-                )}
+                {/* Nombre de déclarations retiré du sidebar */}
               </div>
 
               {/* Liens externes */}
@@ -590,19 +605,30 @@ export default function ProfilPage() {
                 <Scale size={22} className="text-yellow-500 mt-0.5 flex-shrink-0" />
                 <div>
                   <h3 className="text-base sm:text-lg font-semibold text-yellow-300 mb-1">
-                    Données financières non disponibles
+                    {t('profil.no_financial', lang)}
                   </h3>
                   <p className="text-xs sm:text-sm text-yellow-200/80">
-                    Les données patrimoniales et de revenus ne sont pas encore disponibles pour cet élu.
-                    {elu.liens.hatvp && (
-                      <>
-                        {' '}Consultez la{' '}
-                        <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline font-medium">
-                          fiche HATVP
-                        </a>
-                        {' '}pour plus d&apos;informations.
-                      </>
-                    )}
+                    {(() => {
+                      // Check if mandate type does not require patrimoine declaration
+                      const hasPatrimoineMandat = elu.types_mandat?.some((tp) => PATRIMOINE_REQUIRED_MANDATE_TYPES.includes(tp));
+                      if (!hasPatrimoineMandat) {
+                        return t('profil.no_patrimoine_mandat', lang);
+                      }
+                      return (
+                        <>
+                          {t('profil.no_financial.sub', lang)}
+                          {elu.liens.hatvp && (
+                            <>
+                              {' '}{t('profil.consult', lang)}{' '}
+                              <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline font-medium">
+                                {t('profil.fiche_hatvp', lang)}
+                              </a>
+                              {' '}{t('profil.for_more', lang)}
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
                   </p>
                 </div>
               </div>
@@ -637,6 +663,80 @@ export default function ProfilPage() {
                   {allSectionsExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                 </button>
               </div>
+
+              {/* Revenus annuels en premier — total par an, cliquable pour détail */}
+              {(() => {
+                const totalRevenus = elu.hatvp?.total_revenus_euro || elu.revenus || 0;
+                const detailsRevenus = elu.hatvp?.details_revenus as Record<string, unknown>[] | undefined;
+                const detailsActivites = elu.hatvp?.details_activites as Record<string, unknown>[] | undefined;
+                const detailsMandats = elu.hatvp?.details_mandats as Record<string, unknown>[] | undefined;
+
+                // Build a list of revenue items per function/mandate
+                const revenueByFunction: { label: string; montant: number }[] = [];
+                if (detailsRevenus) {
+                  for (const item of deduplicateDetails(detailsRevenus)) {
+                    const label = (item.denomination || item.employeur || item.organisme || item.description || item.type || 'Revenu') as string;
+                    const montant = (item.remuneration || item.montant || item.valeur || 0) as number;
+                    if (montant > 0) revenueByFunction.push({ label, montant });
+                  }
+                }
+                if (detailsActivites) {
+                  for (const item of deduplicateDetails(detailsActivites)) {
+                    const label = (item.denomination || item.employeur || item.organisme || 'Activité') as string;
+                    const montant = (item.remuneration || item.montant || 0) as number;
+                    if (montant > 0) revenueByFunction.push({ label, montant });
+                  }
+                }
+                if (detailsMandats) {
+                  for (const item of deduplicateDetails(detailsMandats)) {
+                    const label = (item.mandat || item.organisme || 'Mandat') as string;
+                    const montant = (item.remuneration || item.montant || 0) as number;
+                    if (montant > 0) revenueByFunction.push({ label, montant });
+                  }
+                }
+
+                const isRevenusExpanded = expandedSections.has('__revenus_annual');
+
+                if (totalRevenus > 0 || revenueByFunction.length > 0) {
+                  return (
+                    <div className="mb-4">
+                      <button
+                        onClick={() => toggleSection('__revenus_annual')}
+                        className={`w-full p-3 rounded-lg transition-colors cursor-pointer ${
+                          isRevenusExpanded ? 'bg-yellow-900/40 border border-yellow-700' : 'bg-yellow-900/30 border border-yellow-800 hover:bg-yellow-900/40'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {isRevenusExpanded ? <ChevronUp size={14} className="text-yellow-400" /> : <ChevronDown size={14} className="text-yellow-400" />}
+                            <span className="text-sm font-semibold text-yellow-300">{t('profil.revenus_par_an', lang)}</span>
+                          </div>
+                          <p className="text-lg font-bold text-yellow-200">{formatMoney(totalRevenus)}<span className="text-xs text-yellow-400 font-normal ml-1">/ {t('profil.an', lang)}</span></p>
+                        </div>
+                        {revenueByFunction.length > 1 && !isRevenusExpanded && (
+                          <p className="text-xs text-yellow-500 mt-1 text-left">{t('profil.click_detail_mandats', lang)}</p>
+                        )}
+                      </button>
+                      {isRevenusExpanded && revenueByFunction.length > 0 && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          transition={{ duration: 0.2 }}
+                          className="mt-1 ml-4 space-y-1 pb-1"
+                        >
+                          {revenueByFunction.map((rf, idx) => (
+                            <div key={idx} className="p-2.5 bg-neutral-900/80 rounded-lg text-sm border border-neutral-700/50 flex items-center justify-between">
+                              <span className="text-white font-medium">{rf.label}</span>
+                              <span className="text-yellow-400 font-semibold">{formatMoney(rf.montant)}<span className="text-xs text-yellow-500 font-normal ml-1">/ {t('profil.an', lang)}</span></span>
+                            </div>
+                          ))}
+                        </motion.div>
+                      )}
+                    </div>
+                  );
+                }
+                return null;
+              })()}
 
               {/* Totaux patrimoine */}
               {(totalActifBrut > 0 || patrimoineNet > 0) && (
@@ -717,16 +817,13 @@ export default function ProfilPage() {
                 })}
               </div>
 
-              {/* Source note */}
+              {/* Source note — simplified */}
               <div className="text-xs text-neutral-500 pt-3 mt-3 border-t border-neutral-700">
-                {t('profil.note_source', lang)}
+                {t('profil.see_full', lang)}{' '}
                 {elu.liens.hatvp && (
-                  <>
-                    {' '}{t('profil.see_full', lang)}{' '}
-                    <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline text-yellow-400">
-                      {t('profil.fiche_hatvp', lang)}
-                    </a>
-                  </>
+                  <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline text-yellow-400">
+                    {t('profil.fiche_hatvp', lang)}
+                  </a>
                 )}
               </div>
             </motion.div>

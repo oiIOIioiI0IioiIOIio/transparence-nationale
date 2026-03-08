@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
 import { motion } from 'framer-motion';
 import { Elu } from '@/lib/types';
 import { User, MapPin, Briefcase } from 'lucide-react';
@@ -23,7 +22,6 @@ export default function PersonCard({ elu, index }: PersonCardProps) {
     return `${(value / 1000).toFixed(0)}K EUR`;
   };
 
-  const photoSrc = elu.photo_url || (elu.photo !== '/photos/placeholder.jpg' ? elu.photo : '');
   const hasFinancialData = (elu.patrimoine || 0) > 0 || (elu.revenus || 0) > 0;
   const nbDeclarations = elu.hatvp?.nb_declarations_hatvp || elu.declarations_csv?.length || 0;
 
@@ -39,22 +37,11 @@ export default function PersonCard({ elu, index }: PersonCardProps) {
           transition={{ duration: 0.2 }}
           className="bg-neutral-800 rounded-xl overflow-hidden shadow-md hover:shadow-xl cursor-pointer h-full flex flex-row border border-neutral-700 hover:border-red-600 transition-colors"
         >
-          {/* Photo ou icone */}
-          <div className="relative w-28 sm:w-32 min-h-[8rem] flex-shrink-0 bg-gradient-to-br from-red-900/40 to-neutral-800">
-            {photoSrc ? (
-              <Image
-                src={photoSrc}
-                alt={`${elu.prenom} ${elu.nom}`}
-                fill
-                className="object-cover"
-                sizes="(max-width: 640px) 112px, 128px"
-                unoptimized={!!elu.photo_url}
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <User size={48} className="text-neutral-600" />
-              </div>
-            )}
+          {/* Icone placeholder (photos désactivées dans la liste) */}
+          <div className="relative w-20 sm:w-24 min-h-[8rem] flex-shrink-0 bg-gradient-to-br from-red-900/40 to-neutral-800">
+            <div className="w-full h-full flex items-center justify-center">
+              <User size={40} className="text-neutral-600" />
+            </div>
           </div>
 
           {/* Contenu */}
@@ -80,23 +67,23 @@ export default function PersonCard({ elu, index }: PersonCardProps) {
               )}
             </div>
 
-            {/* Badges */}
-            <div className="flex gap-1.5 flex-wrap mt-2">
+            {/* Badges — taille augmentée */}
+            <div className="flex gap-2 flex-wrap mt-2">
               {hasFinancialData ? (
                 <>
                   {(elu.patrimoine || 0) > 0 && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-red-900/60 text-red-300 border border-red-700">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs sm:text-sm font-semibold bg-red-900/60 text-red-300 border border-red-700">
                       {t('card.patrimoine', lang)}: {formatMoney(elu.patrimoine || 0)}
                     </span>
                   )}
                   {(elu.revenus || 0) > 0 && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-yellow-900/60 text-yellow-300 border border-yellow-700">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs sm:text-sm font-semibold bg-yellow-900/60 text-yellow-300 border border-yellow-700">
                       {t('card.revenus', lang)}: {formatMoney(elu.revenus || 0)}
                     </span>
                   )}
                 </>
               ) : (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-neutral-700 text-neutral-300">
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs sm:text-sm font-semibold bg-neutral-700 text-neutral-300">
                   {nbDeclarations > 0
                     ? `${nbDeclarations} ${t('card.declarations', lang)}`
                     : t('card.data_pending', lang)}

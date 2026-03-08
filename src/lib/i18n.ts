@@ -222,8 +222,8 @@ const translations: Record<string, Record<Lang, string>> = {
   'profil.revenus_declares': { fr: 'Revenus déclarés', en: 'Declared income' },
   'profil.interets': { fr: 'Intérêts et activités déclarés', en: 'Declared interests and activities' },
   'profil.note_source': {
-    fr: 'Données agrégées à partir des déclarations HATVP disponibles pour cet·te élu·e.',
-    en: 'Data aggregated from available HATVP declarations for this official.',
+    fr: 'Pour consulter le détail complet :',
+    en: 'For full details:',
   },
   'profil.see_full': { fr: 'Pour consulter le détail complet :', en: 'For full details:' },
   'profil.fiche_hatvp': { fr: 'fiche HATVP', en: 'HATVP record' },
@@ -274,6 +274,16 @@ const translations: Record<string, Record<Lang, string>> = {
   'chart.immobilier': { fr: 'Immobilier', en: 'Real Estate' },
   'chart.placements': { fr: 'Placements', en: 'Investments' },
   'chart.autres': { fr: 'Autres', en: 'Other' },
+  // New keys
+  'profil.no_patrimoine_mandat': {
+    fr: 'Son mandat n\'impose pas la déclaration de patrimoine. Seules les déclarations de situation patrimoniale des membres du gouvernement et des membres du collège de la Haute Autorité sont publiées sur hatvp.fr.',
+    en: 'This mandate does not require a wealth declaration. Only the asset declarations of government members and members of the High Authority college are published on hatvp.fr.',
+  },
+  'profil.consult': { fr: 'Consultez la', en: 'Check the' },
+  'profil.for_more': { fr: 'pour plus d\'informations.', en: 'for more information.' },
+  'profil.revenus_par_an': { fr: 'Revenus annuels déclarés', en: 'Declared annual income' },
+  'profil.an': { fr: 'an', en: 'year' },
+  'profil.click_detail_mandats': { fr: 'Cliquez pour voir le détail par fonction / mandat', en: 'Click for detail by function / mandate' },
 };
 
 export function t(key: string, lang: Lang): string {
