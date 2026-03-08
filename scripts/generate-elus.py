@@ -1656,6 +1656,77 @@ def build_list_entry(elu: dict) -> dict:
     return entry
 
 
+def _clean_detail_artifacts(elu: dict) -> dict:
+    """Clean page footer artifacts and DIA noise from existing detail data.
+    Removes patterns like 'Page 2/3 DI/ABADIE-Muriel' and DIA section headers
+    from descriptions."""
+    import copy
+    elu = copy.deepcopy(elu)
+    _PAGE_FOOTER_RE = re.compile(
+        r'\s*Page\s+\d+/\d+(?:\s+D[IA]+/[A-Za-zÀ-ÿ\-]+)?\s*'
+    )
+    _DIA_NOISE_LINES = re.compile(
+        r'(?:Rémunération,?\s*indemnité.*|Description\s*|ou\s+gratification\s*|'
+        r'Conjoint,?\s*partenaire\s+lié\s+par\s+PACS\s+ou\s+concubin\s*|'
+        r'Activité\s+professionnelle\s*|'
+        r'Commentaire\s*:\s*Page\s+\d+/\d+\s+D[IA]+/[A-Za-zÀ-ÿ\-]+)',
+        re.IGNORECASE,
+    )
+    _SECTION_HEADER_RE = re.compile(
+        r'^\d+°\s+(?:Les\s+)?(?:activit[ée]s|fonctions|participations|collaborateurs).*?'
+        r'(?:nomination|élection|d[ée]clarant)\s*',
+        re.IGNORECASE,
+    )
+    _FRAGMENT_RE = re.compile(
+        r'^ou\s+de\s+la\s+nomination\s+par\s+le\s+conjoint.*?concubin\s*|'
+        r'^ou\s+de\s+la\s+nomination\s+et\s+au\s+cours\s+des\s+cinq.*?d[ée]claration\s*|'
+        r'^ou\s+de\s+la\s+nomination\s*$',
+        re.IGNORECASE,
+    )
+
+    def _clean_str(s: str) -> str:
+        if not isinstance(s, str):
+            return s
+        s = _PAGE_FOOTER_RE.sub(' ', s).strip()
+        s = _DIA_NOISE_LINES.sub('', s).strip()
+        s = _SECTION_HEADER_RE.sub('', s).strip()
+        s = _FRAGMENT_RE.sub('', s).strip()
+        s = re.sub(r'\s{2,}', ' ', s)
+        return s
+
+    def _clean_dict(d: dict) -> dict:
+        for k, v in d.items():
+            if isinstance(v, str):
+                d[k] = _clean_str(v)
+            elif isinstance(v, dict):
+                _clean_dict(v)
+            elif isinstance(v, list):
+                _clean_list(v)
+        return d
+
+    def _clean_list(lst: list) -> list:
+        for i, item in enumerate(lst):
+            if isinstance(item, dict):
+                _clean_dict(item)
+            elif isinstance(item, str):
+                lst[i] = _clean_str(item)
+        return lst
+
+    # Clean all detail-related fields in hatvp
+    hatvp = elu.get("hatvp")
+    if hatvp and isinstance(hatvp, dict):
+        for k, v in hatvp.items():
+            if k.startswith("details_") and isinstance(v, list):
+                _clean_list(v)
+
+    # Clean top-level detail fields (some elus have details_* at top level)
+    for k, v in elu.items():
+        if k.startswith("details_") and isinstance(v, list):
+            _clean_list(v)
+
+    return elu
+
+
 def reorganize_data(batch_size: int = 100) -> None:
     """Reorganize data: write full individual JSONs + slim elus.json.
 
@@ -1684,10 +1755,13 @@ def reorganize_data(batch_size: int = 100) -> None:
             if not elu_id:
                 continue
 
+            # Clean page footer artifacts from existing detail data
+            cleaned_elu = _clean_detail_artifacts(elu)
+
             # Write full individual JSON
             out_path = os.path.join(ELUS_DETAIL_DIR, f"{elu_id}.json")
             with open(out_path, "w", encoding="utf-8") as f:
-                json.dump(elu, f, ensure_ascii=False, separators=(",", ":"))
+                json.dump(cleaned_elu, f, ensure_ascii=False, separators=(",", ":"))
             written += 1
 
             # Build slim entry for list
