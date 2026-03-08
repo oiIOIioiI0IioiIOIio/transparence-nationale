@@ -1837,6 +1837,7 @@ def _flush_pending_updates(pending_ids: dict[str, dict]) -> None:
                     # Apply PDF data to the full individual data
                     update_elu_with_pdf_data(individual, pending_ids[eid])
                 except (json.JSONDecodeError, OSError):
+                    print(f"    ⚠ Could not read existing {eid}.json, using elus.json entry")
                     pass  # fall back to elus.json entry
             with open(out_path, "w", encoding="utf-8") as f:
                 json.dump(individual, f, ensure_ascii=False, separators=(",", ":"))

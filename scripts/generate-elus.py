@@ -1755,6 +1755,9 @@ def reorganize_data(batch_size: int = 100) -> None:
 
     # Detect if elus.json has full data (details_*) or is already slim.
     # Sample the first 100 elus to decide.
+    # We check both details_* (from build_resume/full_detail_hatvp) and
+    # declarations_csv (added by enrich_elus_from_csv) — either indicates
+    # elus.json has richer data than the slim list-page version.
     source_is_full = any(
         any(k.startswith("details_") for k in (e.get("hatvp") or {}))
         or e.get("declarations_csv")
@@ -1813,7 +1816,8 @@ def reorganize_data(batch_size: int = 100) -> None:
                                 existing_hatvp[k] = v
                     existing["hatvp"] = existing_hatvp
                     base_elu = existing
-                except (json.JSONDecodeError, OSError):
+                except (json.JSONDecodeError, OSError) as exc:
+                    print(f"  ⚠ Could not read existing {elu_id}.json ({exc}), using elus.json entry")
                     pass  # fall back to elus.json entry
 
             cleaned_elu = _clean_detail_artifacts(base_elu)
