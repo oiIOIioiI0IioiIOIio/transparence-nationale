@@ -285,20 +285,47 @@ SECTION_PATTERNS = {
         r"(?i)dettes?",
         r"(?i)emprunts?",
         r"(?i)passif",
+        r"(?i)capital\s+restant\s+d[ûu]",
     ],
     "revenus": [
         r"(?i)revenus?",
         r"(?i)r[ée]mun[ée]ration",
         r"(?i)indemnit[ée]s?",
         r"(?i)traitements?\s+(?:et|ou)\s+salaires?",
+        r"(?i)montant\s+brut\s+annuel",
+        r"(?i)r[ée]tribution",
     ],
     "activites_professionnelles": [
         r"(?i)activit[ée]s?\s+professionnelles?",
         r"(?i)fonctions?\s+exerc[ée]es?",
+        r"(?i)activit[ée]s?\s+professionnelles?\s+pass[ée]es?",
     ],
     "mandats_electifs": [
         r"(?i)mandats?\s+[ée]lectifs?",
         r"(?i)fonctions?\s+[ée]lectives?",
+        r"(?i)mandats?\s+(?:en\s+cours|actuels?)",
+    ],
+    "activites_conjoint": [
+        r"(?i)activit[ée]s?\s+(?:du|de\s+la)\s+conjoint",
+        r"(?i)activit[ée]s?\s+professionnelles?\s+(?:du|de\s+la)\s+conjoint",
+        r"(?i)conjoint\s*[:;]",
+    ],
+    "fonctions_benevoles": [
+        r"(?i)fonctions?\s+b[ée]n[ée]voles?",
+        r"(?i)activit[ée]s?\s+b[ée]n[ée]voles?",
+    ],
+    "participations_organes": [
+        r"(?i)participation[s]?\s+(?:aux?\s+)?organes?\s+dirigeants?",
+        r"(?i)organes?\s+dirigeants?",
+        r"(?i)fonctions?\s+de\s+direction",
+    ],
+    "activites_anterieures": [
+        r"(?i)activit[ée]s?\s+(?:ant[ée]rieures?|exerc[ée]es?\s+au\s+cours\s+des?\s+cinq)",
+        r"(?i)cinq\s+derni[eè]res?\s+ann[ée]es?",
+    ],
+    "observations": [
+        r"(?i)observations?\s+(?:du|de\s+la)\s+d[ée]clarant",
+        r"(?i)observations?\s+compl[ée]mentaires?",
     ],
 }
 
@@ -430,6 +457,16 @@ def extract_section_items(section_text: str, section_name: str) -> list[dict]:
         elif section_name in ("participations_financieres",
                               "participations_organes"):
             _extract_company_name(block, item)
+        elif section_name == "activites_conjoint":
+            _extract_conjoint_fields(block, item)
+        elif section_name == "fonctions_benevoles":
+            _extract_activites_fields(block, item)
+        elif section_name == "dettes":
+            _extract_dette_fields(block, item)
+        elif section_name == "comptes_bancaires":
+            _extract_compte_fields(block, item)
+        elif section_name == "vehicules":
+            _extract_vehicule_fields(block, item)
 
         if any(v for k, v in item.items() if k != "description"):
             items.append(item)
@@ -631,6 +668,114 @@ def _extract_activites_fields(text: str, item: dict) -> None:
             item["remuneration_euro"] = float(raw)
         except ValueError:
             pass
+
+
+def _extract_conjoint_fields(text: str, item: dict) -> None:
+    """Extract spouse activity fields."""
+    # Profession / activité
+    for pattern in [
+        r"(?i)(?:profession|activit[ée]|m[ée]tier)\s*[:;]\s*(.+?)(?:\s*[,\n]|$)",
+        r"(?i)(?:exerce|occupe)\s+(?:la\s+)?(?:profession|activit[ée])\s+(?:de\s+)?(.+?)(?:\s*[,.\n]|$)",
+    ]:
+        m = re.search(pattern, text)
+        if m:
+            item["profession_conjoint"] = _clean_text(m.group(1)[:200])
+            break
+
+    # Employer
+    emp_match = re.search(r"(?i)employeur\s*[:;]\s*(.+?)(?:\n|$)", text)
+    if emp_match:
+        employer = _clean_text(emp_match.group(1).strip())
+        if employer:
+            item["employeur_conjoint"] = employer
+
+    # Company name
+    _extract_company_name(text, item)
+
+
+def _extract_dette_fields(text: str, item: dict) -> None:
+    """Extract debt/loan specific fields."""
+    # Lending institution
+    for pattern in [
+        r"(?i)(?:organisme|[ée]tablissement|banque|pr[êe]teur)\s*[:;]\s*(.+?)(?:\s*[,\n]|$)",
+        r"(?i)(?:auprès\s+(?:de|du|de\s+la)\s+)(.+?)(?:\s*[,.\n]|$)",
+    ]:
+        m = re.search(pattern, text)
+        if m:
+            item["etablissement"] = _clean_text(m.group(1)[:120])
+            break
+
+    # Date of loan
+    m = re.search(r"(?i)(?:date\s+(?:de\s+l['\u2019])?emprunt|contract[ée]e?\s+(?:le|en))\s*[:;]?\s*(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}|\d{4})", text)
+    if m:
+        item["date_emprunt"] = m.group(1).strip()
+
+    # Capital restant dû
+    m = re.search(r"(?i)capital\s+restant\s+d[ûu]\s*[:;]?\s*(\d[\d\s.,]*)\s*(?:€|euros?)", text)
+    if m:
+        raw = m.group(1).replace(" ", "").replace(",", ".")
+        try:
+            item["capital_restant_du"] = float(raw)
+        except ValueError:
+            pass
+
+
+def _extract_compte_fields(text: str, item: dict) -> None:
+    """Extract bank account specific fields."""
+    # Bank/institution name
+    for pattern in [
+        r"(?i)(?:[ée]tablissement|banque|organisme)\s*[:;]\s*(.+?)(?:\s*[,\n]|$)",
+        r"(?i)(?:tenu[e]?\s+(?:chez|par|auprès\s+de)\s+)(.+?)(?:\s*[,.\n]|$)",
+    ]:
+        m = re.search(pattern, text)
+        if m:
+            item["etablissement"] = _clean_text(m.group(1)[:120])
+            break
+
+    # Account type
+    for label, pattern in [
+        ("Compte courant", r"(?i)compte\s+courant"),
+        ("Livret A", r"(?i)livret\s+A"),
+        ("LDD", r"(?i)LDD|livret\s+de\s+d[ée]veloppement"),
+        ("PEL", r"(?i)PEL|plan\s+[ée]pargne\s+logement"),
+        ("Compte épargne", r"(?i)compte\s+[ée]pargne|livret"),
+        ("Compte titres", r"(?i)compte\s+titres?"),
+        ("PEA", r"(?i)PEA|plan\s+[ée]pargne\s+actions?"),
+    ]:
+        if re.search(pattern, text):
+            item["type_compte"] = label
+            break
+
+
+def _extract_vehicule_fields(text: str, item: dict) -> None:
+    """Extract vehicle specific fields."""
+    # Brand
+    for pattern in [
+        r"(?i)(?:marque|constructeur)\s*[:;]\s*(.+?)(?:\s*[,\n]|$)",
+    ]:
+        m = re.search(pattern, text)
+        if m:
+            item["marque"] = _clean_text(m.group(1)[:60])
+            break
+
+    # Common car brands detection
+    for brand in ["Peugeot", "Renault", "Citroën", "Audi", "BMW", "Mercedes",
+                   "Volkswagen", "Toyota", "Honda", "Ford", "Volvo", "Tesla",
+                   "Porsche", "Fiat", "Opel", "Nissan", "Hyundai", "Kia"]:
+        if re.search(r"(?i)\b" + re.escape(brand) + r"\b", text):
+            if "marque" not in item:
+                item["marque"] = brand
+            break
+
+    # Year
+    m = re.search(r"(?i)(?:ann[ée]e|mis[e]?\s+en\s+circulation)\s*[:;]?\s*((?:19|20)\d{2})", text)
+    if m:
+        item["annee"] = m.group(1)
+
+    # Model
+    m = re.search(r"(?i)mod[èe]le\s*[:;]\s*(.+?)(?:\s*[,\n]|$)", text)
+    if m:
+        item["modele"] = _clean_text(m.group(1)[:60])
 
 
 # ══════════════════════════════════════════════════════════════════════════════

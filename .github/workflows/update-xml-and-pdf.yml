@@ -60,17 +60,16 @@ jobs:
           sudo apt-get install -y -qq tesseract-ocr tesseract-ocr-fra poppler-utils
 
       - name: Mise à jour depuis le XML global
+        if: github.event.inputs.refresh_xml == 'true'
         run: |
-          FLAGS=""
-          if [ "${{ github.event.inputs.refresh_xml }}" == "true" ]; then
-            FLAGS="$FLAGS --refresh-xml"
-          fi
+          FLAGS="--refresh-xml"
           if [ -n "${{ github.event.inputs.limit }}" ]; then
             FLAGS="$FLAGS --limit ${{ github.event.inputs.limit }}"
           fi
           python scripts/generate-elus.py $FLAGS
 
       - name: Enrichir les métadonnées depuis le CSV
+        if: github.event.inputs.refresh_xml == 'true'
         run: python scripts/generate-elus.py --enrich-csv-only
 
       - name: Traiter les PDFs via OCR

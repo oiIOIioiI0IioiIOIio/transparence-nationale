@@ -40,7 +40,7 @@ export default function ListePage() {
   const { lang } = useLang();
   const { loading, getFiltered, searchTerm } = useElus();
   const filteredElus = getFiltered();
-  const [showAll, setShowAll] = useState(false);
+  const [showAll, setShowAll] = useState(true);
 
   useEffect(() => {
     loadElus();
