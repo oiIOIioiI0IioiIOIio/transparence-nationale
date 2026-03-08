@@ -81,7 +81,7 @@ const NB_TO_DETAILS_KEY: Record<string, string> = {
   nb_valeurs_bourse: 'details_valeurs_bourse',
   nb_valeurs_non_bourse: 'details_valeurs_non_bourse',
   nb_instruments_financiers: 'details_instruments_financiers',
-  nb_participations_financieres: 'details_participations',
+  nb_participations_financieres: 'details_participations_financieres',
   nb_fonds: 'details_fonds',
   nb_biens_divers: 'details_biens_divers',
   nb_vehicules: 'details_vehicules',
@@ -91,9 +91,10 @@ const NB_TO_DETAILS_KEY: Record<string, string> = {
   nb_activites_professionnelles: 'details_activites',
   nb_activites_anterieures: 'details_activites_anterieures',
   nb_mandats_electifs: 'details_mandats',
-  nb_participations_organes: 'details_participations',
+  nb_participations_organes: 'details_participations_organes',
   nb_fonctions_benevoles: 'details_fonctions_benevoles',
   nb_activites_conjoint: 'details_activites_conjoint',
+  nb_activites_collaborateurs: 'details_collaborateurs',
   nb_autres_liens_interets: 'details_autres_liens_interets',
 };
 
@@ -139,10 +140,16 @@ const DETAIL_FIELD_LABELS: Record<string, string> = {
   type_instrument: 'Type d\'instrument',
   salaire_euro: 'Salaire',
   revenus_annuels: 'Revenus annuels',
+  // PDF-specific fields
+  montant_euro: 'Montant total',
+  pourcentage_capital: 'Capital détenu',
+  controle_conseil: 'Contrôle activité de conseil',
+  statut: 'Statut',
+  date_declaration: 'Date de déclaration',
 };
 
 // Fields that represent money amounts (displayed with formatMoney)
-const MONEY_FIELDS = new Set(['valeur', 'solde', 'montant', 'remuneration', 'capital_restant_du', 'salaire_euro']);
+const MONEY_FIELDS = new Set(['valeur', 'solde', 'montant', 'remuneration', 'capital_restant_du', 'salaire_euro', 'montant_euro']);
 
 /**
  * Deduplicate an array of detail items by comparing their non-financial string fields.
@@ -186,6 +193,52 @@ function deduplicateDetails(items: Record<string, unknown>[]): Record<string, un
 }
 
 /**
+ * Compute per-year revenue totals from all activities and mandates.
+ * Aggregates revenus_annuels from details_activites and details_mandats.
+ * Returns { yearTotals: Map<string, number>, lastYear: string | null, lastYearTotal: number, grandTotal: number }.
+ */
+function computeYearlyRevenues(
+  detailsActivites?: Record<string, unknown>[],
+  detailsMandats?: Record<string, unknown>[],
+): { yearTotals: Map<string, number>; lastYear: string | null; lastYearTotal: number; grandTotal: number } {
+  const yearTotals = new Map<string, number>();
+
+  const processItems = (items?: Record<string, unknown>[]) => {
+    if (!items) return;
+    for (const item of items) {
+      const annuels = item.revenus_annuels as { annee?: string; montant?: number }[] | undefined;
+      if (annuels && Array.isArray(annuels)) {
+        for (const ys of annuels) {
+          if (ys.annee && typeof ys.montant === 'number' && ys.montant > 0) {
+            yearTotals.set(ys.annee, (yearTotals.get(ys.annee) || 0) + ys.montant);
+          }
+        }
+      }
+    }
+  };
+
+  processItems(detailsActivites);
+  processItems(detailsMandats);
+
+  let lastYear: string | null = null;
+  let lastYearNum = 0;
+  let lastYearTotal = 0;
+  let grandTotal = 0;
+
+  for (const [year, total] of yearTotals.entries()) {
+    grandTotal += total;
+    const yearNum = parseInt(year, 10) || 0;
+    if (yearNum > lastYearNum) {
+      lastYearNum = yearNum;
+      lastYear = year;
+      lastYearTotal = total;
+    }
+  }
+
+  return { yearTotals, lastYear, lastYearTotal, grandTotal };
+}
+
+/**
  * Categorize mandats into current and past.
  * A mandat is considered "past" if the HATVP details_mandats indicate it has ended (date_fin).
  */
@@ -223,24 +276,44 @@ function DetailItemRenderer({ item, formatMoney }: { item: Record<string, unknow
   const primaryKey = ['denomination', 'description', 'mandat', 'marque', 'etablissement', 'organisme', 'type'].find(k => item[k] != null && item[k] !== '');
   const primaryValue = primaryKey ? String(item[primaryKey]) : null;
 
+  // Fields to skip in the "other fields" list (metadata or already displayed)
+  const skipFields = new Set([primaryKey || '', 'montants_details', 'description']);
+
   // Collect other fields
   const otherFields = Object.entries(item).filter(([key, val]) => {
-    if (key === primaryKey || val == null || val === '' || val === 0) return false;
+    if (skipFields.has(key) || val == null || val === '' || val === 0) return false;
     return true;
   });
 
   return (
-    <div className="p-2.5 bg-neutral-900/80 rounded-lg text-sm border border-neutral-700/50">
-      {primaryValue && <p className="text-white font-medium">{primaryValue}</p>}
+    <div className="p-2.5 bg-th-bg-secondary/80 rounded-lg text-sm border border-th-border/50">
+      {primaryValue && <p className="text-th-text font-medium">{primaryValue}</p>}
       {otherFields.length > 0 && (
         <div className="mt-1 space-y-0.5">
           {otherFields.map(([key, val]) => {
             const label = DETAIL_FIELD_LABELS[key] || key.replace(/_/g, ' ');
             const isMoney = MONEY_FIELDS.has(key);
+
+            // Handle revenus_annuels array display
+            if (key === 'revenus_annuels' && Array.isArray(val)) {
+              return (
+                <div key={key} className="mt-1">
+                  <p className="text-xs text-th-text-muted mb-0.5">{label} :</p>
+                  <div className="ml-2 space-y-0.5">
+                    {(val as { annee?: string; montant?: number }[]).map((ys, idx) => (
+                      <p key={idx} className="text-xs text-yellow-500 font-semibold">
+                        {ys.annee} : {typeof ys.montant === 'number' ? formatMoney(ys.montant) : '—'}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+
             const display = isMoney && typeof val === 'number' ? formatMoney(val) : String(val);
             return (
-              <p key={key} className={`text-xs ${isMoney ? 'text-yellow-400 font-semibold' : 'text-neutral-400'}`}>
-                <span className="text-neutral-500">{label} :</span> {display}
+              <p key={key} className={`text-xs ${isMoney ? 'text-yellow-500 font-semibold' : 'text-th-text-muted'}`}>
+                <span className="text-th-text-muted">{label} :</span> {display}
               </p>
             );
           })}
@@ -314,7 +387,7 @@ export default function ProfilPage() {
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-red-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-neutral-400">Chargement du profil...</p>
+          <p className="text-th-text-muted">Chargement du profil...</p>
         </div>
       </div>
     );
@@ -324,8 +397,8 @@ export default function ProfilPage() {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="text-center py-16">
-          <User size={64} className="text-neutral-600 mx-auto mb-4" />
-          <h3 className="text-2xl font-bold text-white mb-2">
+          <User size={64} className="text-th-text-muted mx-auto mb-4" />
+          <h3 className="text-2xl font-bold text-th-text mb-2">
             Élu non trouvé
           </h3>
           <button
@@ -361,9 +434,16 @@ export default function ProfilPage() {
     }
   };
 
-  const hasFinancialData = (elu.patrimoine || 0) > 0 || (elu.revenus || 0) > 0 || (elu.immobilier || 0) > 0;
+  const hasPatrimoineData = (elu.patrimoine || 0) > 0 || (elu.immobilier || 0) > 0;
+  const hasRevenusData = (elu.revenus || 0) > 0;
+  const hasFinancialData = hasPatrimoineData || hasRevenusData;
   const placementsMontant = elu.placements_montant || (typeof elu.placements === 'number' ? elu.placements : 0);
   const photoSrc = elu.photo_url || (elu.photo !== '/photos/placeholder.jpg' ? elu.photo : '');
+
+  // Check if this person has DSP (patrimoine) declarations
+  const hasDspDeclarations = elu.declarations_csv?.some(d => d.type.startsWith('DSP'));
+  // Check if mandate type requires patrimoine
+  const hasPatrimoineMandat = elu.types_mandat?.some((tp) => PATRIMOINE_REQUIRED_MANDATE_TYPES.includes(tp));
 
   // Collecter les sections HATVP détaillées qui ont des données
   // Exclure les champs meta (nb_declarations_hatvp) et ne garder que les sections de contenu
@@ -385,6 +465,34 @@ export default function ProfilPage() {
   const totalDettes = elu.hatvp?.total_dettes_euro || 0;
   const patrimoineNet = elu.hatvp?.patrimoine_net_euro || 0;
 
+  // Use pre-computed yearly revenue data from JSON when available,
+  // fall back to computing from details on the client side.
+  const precomputedLastYear = elu.hatvp?.last_year_label as string | undefined;
+  const precomputedLastYearRevenus = elu.hatvp?.last_year_revenus as number | undefined;
+  const precomputedTotalAll = elu.hatvp?.total_revenus_all_years as number | undefined;
+
+  let hasYearlyData: boolean;
+  let lastYearLabel: string | null;
+  let lastYearRevenu: number;
+  let yearlyRevenuesGrandTotal: number;
+
+  if (precomputedLastYear && typeof precomputedLastYearRevenus === 'number' && precomputedLastYearRevenus > 0) {
+    hasYearlyData = true;
+    lastYearLabel = precomputedLastYear;
+    lastYearRevenu = precomputedLastYearRevenus;
+    yearlyRevenuesGrandTotal = precomputedTotalAll || precomputedLastYearRevenus;
+  } else {
+    // Fallback: compute on the client
+    const yearlyRevenues = computeYearlyRevenues(
+      elu.hatvp?.details_activites as Record<string, unknown>[] | undefined,
+      elu.hatvp?.details_mandats as Record<string, unknown>[] | undefined,
+    );
+    hasYearlyData = yearlyRevenues.lastYear !== null;
+    lastYearLabel = yearlyRevenues.lastYear;
+    lastYearRevenu = yearlyRevenues.lastYearTotal;
+    yearlyRevenuesGrandTotal = yearlyRevenues.grandTotal;
+  }
+
   // Sections that have expandable details
   const expandableSectionKeys = hatvpSections
     .filter(({ key }) => {
@@ -402,7 +510,7 @@ export default function ProfilPage() {
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         onClick={() => router.push('/liste')}
-        className="flex items-center gap-2 text-neutral-400 hover:text-red-500 mb-6 sm:mb-8 transition-colors"
+        className="flex items-center gap-2 text-th-text-muted hover:text-red-500 mb-6 sm:mb-8 transition-colors"
       >
         <ArrowLeft size={20} />
         <span className="font-medium">Retour à la galerie</span>
@@ -416,9 +524,9 @@ export default function ProfilPage() {
           transition={{ duration: 0.4 }}
           className="lg:col-span-1"
         >
-          <div className="bg-neutral-800 rounded-xl shadow-lg overflow-hidden sticky top-20 sm:top-24 border-2 border-red-700">
+          <div className="bg-th-card rounded-xl shadow-lg overflow-hidden sticky top-20 sm:top-24 border-2 border-red-700">
             {/* Photo — affichée en entier */}
-            <div className="relative aspect-[3/4] max-h-80 sm:max-h-96 bg-gradient-to-br from-red-900/40 to-neutral-800">
+            <div className="relative aspect-[3/4] max-h-80 sm:max-h-96 bg-gradient-to-br from-red-100 dark:from-red-900/40 to-gray-50 dark:to-neutral-800">
               {photoSrc ? (
                 <Image
                   src={photoSrc}
@@ -430,14 +538,14 @@ export default function ProfilPage() {
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
-                  <User size={100} className="text-neutral-600" />
+                  <User size={100} className="text-th-text-muted" />
                 </div>
               )}
             </div>
 
             {/* Infos de base */}
             <div className="p-4 sm:p-6">
-              <h1 className="text-xl sm:text-2xl font-bold text-white mb-2">
+              <h1 className="text-xl sm:text-2xl font-bold text-th-text mb-2">
                 {elu.prenom} {elu.nom}
               </h1>
               
@@ -445,8 +553,8 @@ export default function ProfilPage() {
                 <div className="flex items-start gap-2 sm:gap-3">
                   <Briefcase size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-xs text-neutral-500">Fonction</p>
-                    <p className="font-semibold text-white text-sm sm:text-base">{elu.fonction}</p>
+                    <p className="text-xs text-th-text-muted">Fonction</p>
+                    <p className="font-semibold text-th-text text-sm sm:text-base">{elu.fonction}</p>
                   </div>
                 </div>
                 
@@ -454,8 +562,8 @@ export default function ProfilPage() {
                   <div className="flex items-start gap-2 sm:gap-3">
                     <MapPin size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-xs text-neutral-500">Département</p>
-                      <p className="font-semibold text-white text-sm sm:text-base">{elu.region}</p>
+                      <p className="text-xs text-th-text-muted">Département</p>
+                      <p className="font-semibold text-th-text text-sm sm:text-base">{elu.region}</p>
                     </div>
                   </div>
                 )}
@@ -464,8 +572,8 @@ export default function ProfilPage() {
                   <div className="flex items-start gap-2 sm:gap-3">
                     <Users size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-xs text-neutral-500">Groupe politique</p>
-                      <p className="font-semibold text-white text-sm sm:text-base">{elu.groupe}</p>
+                      <p className="text-xs text-th-text-muted">Groupe politique</p>
+                      <p className="font-semibold text-th-text text-sm sm:text-base">{elu.groupe}</p>
                     </div>
                   </div>
                 )}
@@ -474,8 +582,8 @@ export default function ProfilPage() {
                   <div className="flex items-start gap-2 sm:gap-3">
                     <Building2 size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-xs text-neutral-500">Parti</p>
-                      <p className="font-semibold text-white text-sm sm:text-base">{elu.parti}</p>
+                      <p className="text-xs text-th-text-muted">Parti</p>
+                      <p className="font-semibold text-th-text text-sm sm:text-base">{elu.parti}</p>
                     </div>
                   </div>
                 )}
@@ -484,7 +592,7 @@ export default function ProfilPage() {
                   <div className="flex items-start gap-2 sm:gap-3">
                     <Landmark size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-xs text-neutral-500">Type de mandat</p>
+                      <p className="text-xs text-th-text-muted">Type de mandat</p>
                       <div className="flex flex-wrap gap-1 mt-1">
                         {elu.types_mandat.map((tm) => (
                           <span
@@ -504,8 +612,8 @@ export default function ProfilPage() {
 
               {/* Liens externes */}
               {(elu.liens.assemblee || elu.liens.hatvp || elu.liens.senat || elu.liens.wikipedia) && (
-                <div className="border-t border-neutral-700 pt-4">
-                  <p className="text-sm font-semibold text-neutral-300 mb-3">
+                <div className="border-t border-th-border pt-4">
+                  <p className="text-sm font-semibold text-th-text-secondary mb-3">
                     Sources & Liens
                   </p>
                   <div className="space-y-2">
@@ -562,78 +670,113 @@ export default function ProfilPage() {
 
         {/* Colonne droite - Stats et détails */}
         <div className="lg:col-span-2 space-y-5 sm:space-y-6">
-          {/* Stats Cards */}
-          {hasFinancialData ? (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.1 }}
-              className="grid grid-cols-2 gap-3 sm:gap-6"
-            >
-              <div className="bg-gradient-to-br from-red-700 to-red-800 rounded-xl shadow-lg p-4 sm:p-6 text-white">
-                <p className="text-red-200 text-xs sm:text-sm font-medium mb-1 sm:mb-2">
-                  Patrimoine Total
-                </p>
-                <p className="text-xl sm:text-3xl font-bold mb-0.5 sm:mb-1">
-                  {formatMoney(elu.patrimoine || 0)}
-                </p>
-                <p className="text-red-200 text-[10px] sm:text-xs">
-                  Déclaré à la HATVP
-                </p>
-              </div>
+          {/* Stats Cards — show revenus and patrimoine independently */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
+            className="space-y-3 sm:space-y-4"
+          >
+            {/* Revenue + Patrimoine Cards */}
+            {hasFinancialData && (
+              <div className={`grid gap-3 sm:gap-6 ${hasPatrimoineData && hasRevenusData ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                {hasPatrimoineData && (
+                  <div className="bg-gradient-to-br from-red-700 to-red-800 rounded-xl shadow-lg p-4 sm:p-6 text-white">
+                    <p className="text-red-200 text-xs sm:text-sm font-medium mb-1 sm:mb-2">
+                      Patrimoine Total
+                    </p>
+                    <p className="text-xl sm:text-3xl font-bold mb-0.5 sm:mb-1">
+                      {formatMoney(elu.patrimoine || 0)}
+                    </p>
+                    <p className="text-red-200 text-[10px] sm:text-xs">
+                      Déclaré à la HATVP
+                    </p>
+                  </div>
+                )}
 
-              <div className="bg-gradient-to-br from-yellow-600 to-yellow-700 rounded-xl shadow-lg p-4 sm:p-6 text-white">
-                <p className="text-yellow-100 text-xs sm:text-sm font-medium mb-1 sm:mb-2">
-                  Revenus Annuels
-                </p>
-                <p className="text-xl sm:text-3xl font-bold mb-0.5 sm:mb-1">
-                  {formatMoney(elu.revenus || 0)}
-                </p>
-                <p className="text-yellow-100 text-[10px] sm:text-xs">
-                  Bruts déclarés
-                </p>
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.1 }}
-              className="bg-yellow-900/30 border border-yellow-700 rounded-xl p-4 sm:p-6"
-            >
-              <div className="flex items-start gap-3">
-                <Scale size={22} className="text-yellow-500 mt-0.5 flex-shrink-0" />
-                <div>
-                  <h3 className="text-base sm:text-lg font-semibold text-yellow-300 mb-1">
-                    {t('profil.no_financial', lang)}
-                  </h3>
-                  <p className="text-xs sm:text-sm text-yellow-200/80">
-                    {(() => {
-                      // Check if mandate type does not require patrimoine declaration
-                      const hasPatrimoineMandat = elu.types_mandat?.some((tp) => PATRIMOINE_REQUIRED_MANDATE_TYPES.includes(tp));
-                      if (!hasPatrimoineMandat) {
-                        return t('profil.no_patrimoine_mandat', lang);
+                {hasRevenusData && (
+                  <div className="bg-gradient-to-br from-yellow-600 to-yellow-700 rounded-xl shadow-lg p-4 sm:p-6 text-white">
+                    <p className="text-yellow-100 text-xs sm:text-sm font-medium mb-1 sm:mb-2">
+                      {hasYearlyData
+                        ? `${t('profil.revenus_declares', lang)} (${lastYearLabel})`
+                        : t('profil.revenus_declares', lang)
                       }
-                      return (
-                        <>
-                          {t('profil.no_financial.sub', lang)}
-                          {elu.liens.hatvp && (
-                            <>
-                              {' '}{t('profil.consult', lang)}{' '}
-                              <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline font-medium">
-                                {t('profil.fiche_hatvp', lang)}
-                              </a>
-                              {' '}{t('profil.for_more', lang)}
-                            </>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </p>
+                    </p>
+                    <p className="text-xl sm:text-3xl font-bold mb-0.5 sm:mb-1">
+                      {formatMoney(hasYearlyData ? lastYearRevenu : (elu.revenus || 0))}
+                    </p>
+                    <p className="text-yellow-100 text-[10px] sm:text-xs">
+                      {t('profil.bruts_declares', lang)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Patrimoine explanation when missing */}
+            {!hasPatrimoineData && (
+              <div className="bg-th-card/60 border border-th-border rounded-xl p-4 sm:p-5">
+                <div className="flex items-start gap-3">
+                  <Scale size={20} className="text-th-text-muted mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h3 className="text-sm sm:text-base font-semibold text-th-text-secondary mb-1">
+                      {t('profil.no_patrimoine_title', lang)}
+                    </h3>
+                    <p className="text-xs sm:text-sm text-th-text-muted">
+                      {(() => {
+                        if (hasDspDeclarations) {
+                          return t('profil.patrimoine_en_cours', lang);
+                        }
+                        if (!hasPatrimoineMandat) {
+                          return t('profil.no_patrimoine_mandat', lang);
+                        }
+                        return (
+                          <>
+                            {t('profil.no_financial.sub', lang)}
+                            {elu.liens.hatvp && (
+                              <>
+                                {' '}{t('profil.consult', lang)}{' '}
+                                <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline font-medium text-red-400">
+                                  {t('profil.fiche_hatvp', lang)}
+                                </a>
+                                {' '}{t('profil.for_more', lang)}
+                              </>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </motion.div>
-          )}
+            )}
+
+            {/* No financial data at all */}
+            {!hasFinancialData && !hatvpSections.length && (
+              <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700 rounded-xl p-4 sm:p-6">
+                <div className="flex items-start gap-3">
+                  <Scale size={22} className="text-yellow-600 dark:text-yellow-500 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h3 className="text-base sm:text-lg font-semibold text-yellow-800 dark:text-yellow-300 mb-1">
+                      {t('profil.no_financial', lang)}
+                    </h3>
+                    <p className="text-xs sm:text-sm text-yellow-700 dark:text-yellow-200/80">
+                      {t('profil.no_financial.sub', lang)}
+                      {elu.liens.hatvp && (
+                        <>
+                          {' '}{t('profil.consult', lang)}{' '}
+                          <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline font-medium">
+                            {t('profil.fiche_hatvp', lang)}
+                          </a>
+                          {' '}{t('profil.for_more', lang)}
+                        </>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </motion.div>
 
           {/* Detail patrimoine HATVP */}
           {hatvpSections.length > 0 && (
@@ -641,10 +784,10 @@ export default function ProfilPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.15 }}
-              className="bg-neutral-800 rounded-xl shadow-lg p-4 sm:p-6 border border-neutral-700"
+              className="bg-th-card rounded-xl shadow-lg p-4 sm:p-6 border border-th-border"
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+                <h3 className="text-lg sm:text-xl font-bold text-th-text flex items-center gap-2">
                   <TrendingUp size={20} className="text-red-500" />
                   {t('profil.synthese', lang)}
                 </h3>
@@ -664,36 +807,34 @@ export default function ProfilPage() {
                 </button>
               </div>
 
-              {/* Revenus annuels en premier — total par an, cliquable pour détail */}
+              {/* Revenus annuels en premier — dernier exercice déclaré, cliquable pour détail */}
               {(() => {
                 const totalRevenus = elu.hatvp?.total_revenus_euro || elu.revenus || 0;
-                const detailsRevenus = elu.hatvp?.details_revenus as Record<string, unknown>[] | undefined;
                 const detailsActivites = elu.hatvp?.details_activites as Record<string, unknown>[] | undefined;
                 const detailsMandats = elu.hatvp?.details_mandats as Record<string, unknown>[] | undefined;
 
                 // Build a list of revenue items per function/mandate
                 const revenueByFunction: { label: string; montant: number }[] = [];
-                if (detailsRevenus) {
-                  for (const item of deduplicateDetails(detailsRevenus)) {
-                    const label = (item.denomination || item.employeur || item.organisme || item.description || item.type || 'Revenu') as string;
-                    const montant = (item.remuneration || item.montant || item.valeur || 0) as number;
-                    if (montant > 0) revenueByFunction.push({ label, montant });
-                  }
-                }
                 if (detailsActivites) {
                   for (const item of deduplicateDetails(detailsActivites)) {
                     const label = (item.denomination || item.employeur || item.organisme || 'Activité') as string;
-                    const montant = (item.remuneration || item.montant || 0) as number;
+                    const montant = (item.montant_euro || item.remuneration || item.montant || 0) as number;
                     if (montant > 0) revenueByFunction.push({ label, montant });
                   }
                 }
                 if (detailsMandats) {
                   for (const item of deduplicateDetails(detailsMandats)) {
                     const label = (item.mandat || item.organisme || 'Mandat') as string;
-                    const montant = (item.remuneration || item.montant || 0) as number;
+                    const montant = (item.montant_euro || item.remuneration || item.montant || 0) as number;
                     if (montant > 0) revenueByFunction.push({ label, montant });
                   }
                 }
+
+                // Summary amount: last year's total if yearly data available, otherwise overall total
+                const summaryAmount = hasYearlyData ? lastYearRevenu : totalRevenus;
+                const summaryLabel = hasYearlyData
+                  ? `${t('profil.revenus_par_an', lang)} (${lastYearLabel})`
+                  : t('profil.revenus_par_an', lang);
 
                 const isRevenusExpanded = expandedSections.has('__revenus_annual');
 
@@ -703,18 +844,18 @@ export default function ProfilPage() {
                       <button
                         onClick={() => toggleSection('__revenus_annual')}
                         className={`w-full p-3 rounded-lg transition-colors cursor-pointer ${
-                          isRevenusExpanded ? 'bg-yellow-900/40 border border-yellow-700' : 'bg-yellow-900/30 border border-yellow-800 hover:bg-yellow-900/40'
+                          isRevenusExpanded ? 'bg-yellow-100 dark:bg-yellow-900/40 border border-yellow-300 dark:border-yellow-700' : 'bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800 hover:bg-yellow-100 dark:hover:bg-yellow-900/40'
                         }`}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            {isRevenusExpanded ? <ChevronUp size={14} className="text-yellow-400" /> : <ChevronDown size={14} className="text-yellow-400" />}
-                            <span className="text-sm font-semibold text-yellow-300">{t('profil.revenus_par_an', lang)}</span>
+                            {isRevenusExpanded ? <ChevronUp size={14} className="text-yellow-600 dark:text-yellow-500" /> : <ChevronDown size={14} className="text-yellow-600 dark:text-yellow-500" />}
+                            <span className="text-sm font-semibold text-yellow-800 dark:text-yellow-300">{summaryLabel}</span>
                           </div>
-                          <p className="text-lg font-bold text-yellow-200">{formatMoney(totalRevenus)}<span className="text-xs text-yellow-400 font-normal ml-1">/ {t('profil.an', lang)}</span></p>
+                          <p className="text-lg font-bold text-yellow-900 dark:text-yellow-200">{formatMoney(summaryAmount)}</p>
                         </div>
                         {revenueByFunction.length > 1 && !isRevenusExpanded && (
-                          <p className="text-xs text-yellow-500 mt-1 text-left">{t('profil.click_detail_mandats', lang)}</p>
+                          <p className="text-xs text-yellow-600 dark:text-yellow-500 mt-1 text-left">{t('profil.click_detail_mandats', lang)}</p>
                         )}
                       </button>
                       {isRevenusExpanded && revenueByFunction.length > 0 && (
@@ -725,11 +866,18 @@ export default function ProfilPage() {
                           className="mt-1 ml-4 space-y-1 pb-1"
                         >
                           {revenueByFunction.map((rf, idx) => (
-                            <div key={idx} className="p-2.5 bg-neutral-900/80 rounded-lg text-sm border border-neutral-700/50 flex items-center justify-between">
-                              <span className="text-white font-medium">{rf.label}</span>
-                              <span className="text-yellow-400 font-semibold">{formatMoney(rf.montant)}<span className="text-xs text-yellow-500 font-normal ml-1">/ {t('profil.an', lang)}</span></span>
+                            <div key={idx} className="p-2.5 bg-th-bg-secondary/80 rounded-lg text-sm border border-th-border/50 flex items-center justify-between">
+                              <span className="text-th-text font-medium">{rf.label}</span>
+                              <span className="text-yellow-700 dark:text-yellow-500 font-semibold">{formatMoney(rf.montant)}</span>
                             </div>
                           ))}
+                          {/* Total across all years */}
+                          {hasYearlyData && yearlyRevenuesGrandTotal > lastYearRevenu && (
+                            <div className="p-2.5 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg text-sm border border-yellow-300 dark:border-yellow-800 flex items-center justify-between mt-2">
+                              <span className="text-yellow-800 dark:text-yellow-300 font-semibold">{t('profil.total_all_years', lang)}</span>
+                              <span className="text-yellow-900 dark:text-yellow-200 font-bold">{formatMoney(yearlyRevenuesGrandTotal)}</span>
+                            </div>
+                          )}
                         </motion.div>
                       )}
                     </div>
@@ -742,21 +890,21 @@ export default function ProfilPage() {
               {(totalActifBrut > 0 || patrimoineNet > 0) && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                   {totalActifBrut > 0 && (
-                    <div className="p-3 bg-red-900/30 rounded-lg border border-red-800">
-                      <p className="text-xs text-red-500 font-medium">{t('profil.actif_brut', lang)}</p>
-                      <p className="text-lg font-bold text-red-200">{formatMoney(totalActifBrut)}</p>
+                    <div className="p-3 bg-red-50 dark:bg-red-900/30 rounded-lg border border-red-200 dark:border-red-800">
+                      <p className="text-xs text-red-600 dark:text-red-500 font-medium">{t('profil.actif_brut', lang)}</p>
+                      <p className="text-lg font-bold text-red-800 dark:text-red-200">{formatMoney(totalActifBrut)}</p>
                     </div>
                   )}
                   {totalDettes > 0 && (
-                    <div className="p-3 bg-yellow-900/30 rounded-lg border border-yellow-800">
-                      <p className="text-xs text-yellow-400 font-medium">{t('profil.dettes_emprunts', lang)}</p>
-                      <p className="text-lg font-bold text-yellow-200">-{formatMoney(totalDettes)}</p>
+                    <div className="p-3 bg-yellow-50 dark:bg-yellow-900/30 rounded-lg border border-yellow-300 dark:border-yellow-800">
+                      <p className="text-xs text-yellow-700 dark:text-yellow-500 font-medium">{t('profil.dettes_emprunts', lang)}</p>
+                      <p className="text-lg font-bold text-yellow-900 dark:text-yellow-200">-{formatMoney(totalDettes)}</p>
                     </div>
                   )}
                   {patrimoineNet > 0 && (
-                    <div className="p-3 bg-neutral-700/50 rounded-lg border border-neutral-600">
-                      <p className="text-xs text-neutral-400 font-medium">{t('profil.patrimoine_net', lang)}</p>
-                      <p className="text-lg font-bold text-white">{formatMoney(patrimoineNet)}</p>
+                    <div className="p-3 bg-th-bg-secondary/50 rounded-lg border border-th-border">
+                      <p className="text-xs text-th-text-muted font-medium">{t('profil.patrimoine_net', lang)}</p>
+                      <p className="text-lg font-bold text-th-text">{formatMoney(patrimoineNet)}</p>
                     </div>
                   )}
                 </div>
@@ -777,8 +925,8 @@ export default function ProfilPage() {
                       <button
                         onClick={() => hasDetails && toggleSection(key)}
                         className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors ${
-                          isExpanded ? 'bg-neutral-700/60' : 'bg-neutral-900/60'
-                        } ${hasDetails ? 'cursor-pointer hover:bg-neutral-700/50' : 'cursor-default'}`}
+                          isExpanded ? 'bg-th-bg-secondary/60' : 'bg-th-bg-secondary/60'
+                        } ${hasDetails ? 'cursor-pointer hover:bg-th-bg-secondary/50' : 'cursor-default'}`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           {hasDetails ? (
@@ -790,12 +938,12 @@ export default function ProfilPage() {
                               <div className="w-2 h-2 rounded-full bg-red-500/30" />
                             </div>
                           )}
-                          <span className="text-sm text-neutral-300 truncate text-left">{label}</span>
+                          <span className="text-sm text-th-text-secondary truncate text-left">{label}</span>
                         </div>
                         <div className="text-right flex-shrink-0 ml-2">
-                          <span className="text-sm font-bold text-white">{dedupCount}</span>
+                          <span className="text-sm font-bold text-th-text">{dedupCount}</span>
                           {value != null && value > 0 && (
-                            <p className="text-xs text-neutral-500">{formatMoney(value)}</p>
+                            <p className="text-xs text-th-text-muted">{formatMoney(value)}</p>
                           )}
                         </div>
                       </button>
@@ -818,10 +966,10 @@ export default function ProfilPage() {
               </div>
 
               {/* Source note — simplified */}
-              <div className="text-xs text-neutral-500 pt-3 mt-3 border-t border-neutral-700">
+              <div className="text-xs text-th-text-muted pt-3 mt-3 border-t border-th-border">
                 {t('profil.see_full', lang)}{' '}
                 {elu.liens.hatvp && (
-                  <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline text-yellow-400">
+                  <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline text-yellow-500">
                     {t('profil.fiche_hatvp', lang)}
                   </a>
                 )}
@@ -829,8 +977,26 @@ export default function ProfilPage() {
             </motion.div>
           )}
 
-          {/* Graphique - seulement si données financières */}
-          {hasFinancialData && (
+          {/* Observations du déclarant */}
+          {elu.hatvp?.details_observations && (elu.hatvp.details_observations as Record<string, unknown>[]).length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.17 }}
+              className="bg-th-card rounded-xl shadow-lg p-4 sm:p-6 border border-th-border"
+            >
+              <h3 className="text-base sm:text-lg font-bold text-th-text mb-3 flex items-center gap-2">
+                <FileText size={18} className="text-red-500" />
+                Observations du déclarant
+              </h3>
+              {(elu.hatvp.details_observations as Record<string, unknown>[]).map((obs, idx) => (
+                <p key={idx} className="text-sm text-th-text-secondary italic">
+                  {String(obs.description || '')}
+                </p>
+              ))}
+            </motion.div>
+          )}
+          {hasPatrimoineData && (
             <PortfolioChart
               immobilier={elu.immobilier || 0}
               placements={placementsMontant}
@@ -844,9 +1010,9 @@ export default function ProfilPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.3 }}
-              className="bg-neutral-800 rounded-xl shadow-lg p-4 sm:p-6 border border-neutral-700"
+              className="bg-th-card rounded-xl shadow-lg p-4 sm:p-6 border border-th-border"
             >
-              <h3 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <h3 className="text-lg sm:text-xl font-bold text-th-text mb-4 flex items-center gap-2">
                 <Briefcase size={20} className="text-red-500" />
                 {t('profil.mandats', lang)}
               </h3>
@@ -868,10 +1034,10 @@ export default function ProfilPage() {
                           {currentMandats.map((mandat, index) => (
                             <div
                               key={index}
-                              className="flex items-center gap-3 p-3 bg-neutral-900/60 rounded-lg"
+                              className="flex items-center gap-3 p-3 bg-th-bg-secondary/60 rounded-lg"
                             >
                               <div className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0" />
-                              <span className="text-sm text-neutral-300">{mandat}</span>
+                              <span className="text-sm text-th-text-secondary">{mandat}</span>
                             </div>
                           ))}
                         </div>
@@ -882,7 +1048,7 @@ export default function ProfilPage() {
                       <div>
                         <button
                           onClick={() => setShowPastMandats(!showPastMandats)}
-                          className="flex items-center gap-2 text-sm font-semibold text-neutral-400 hover:text-neutral-200 transition-colors mb-2"
+                          className="flex items-center gap-2 text-sm font-semibold text-th-text-muted hover:text-th-text-secondary transition-colors mb-2"
                         >
                           {showPastMandats ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                           Passés ({pastMandats.length})
@@ -897,10 +1063,10 @@ export default function ProfilPage() {
                               {pastMandats.map((mandat, index) => (
                                 <div
                                   key={index}
-                                  className="flex items-center gap-3 p-3 bg-neutral-900/40 rounded-lg"
+                                  className="flex items-center gap-3 p-3 bg-th-bg-secondary/40 rounded-lg"
                                 >
-                                  <div className="w-2 h-2 bg-neutral-500 rounded-full flex-shrink-0" />
-                                  <span className="text-sm text-neutral-400">{mandat}</span>
+                                  <div className="w-2 h-2 bg-th-text-muted rounded-full flex-shrink-0" />
+                                  <span className="text-sm text-th-text-muted">{mandat}</span>
                                 </div>
                               ))}
                             </div>
@@ -920,9 +1086,9 @@ export default function ProfilPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.4 }}
-              className="bg-neutral-800 rounded-xl shadow-lg p-4 sm:p-6 border border-neutral-700"
+              className="bg-th-card rounded-xl shadow-lg p-4 sm:p-6 border border-th-border"
             >
-              <h3 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <h3 className="text-lg sm:text-xl font-bold text-th-text mb-4 flex items-center gap-2">
                 <FileText size={20} className="text-red-500" />
                 Déclarations HATVP
               </h3>
@@ -930,7 +1096,7 @@ export default function ProfilPage() {
                 {elu.declarations_csv.map((decl, index) => (
                   <div
                     key={index}
-                    className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 p-3 sm:p-4 bg-neutral-900/60 rounded-lg"
+                    className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 p-3 sm:p-4 bg-th-bg-secondary/60 rounded-lg"
                   >
                     <div className="flex-shrink-0">
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold ${
@@ -942,23 +1108,23 @@ export default function ProfilPage() {
                       </span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-white">
+                      <p className="text-sm font-medium text-th-text">
                         {DOC_TYPE_LABELS[decl.type] || decl.type}
                       </p>
                       {decl.qualite && (
-                        <p className="text-xs text-neutral-500 mt-0.5">
+                        <p className="text-xs text-th-text-muted mt-0.5">
                           En qualité de : {decl.qualite}
                         </p>
                       )}
                       <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-1">
                         {decl.date_publication && (
-                          <span className="flex items-center gap-1 text-xs text-neutral-500">
+                          <span className="flex items-center gap-1 text-xs text-th-text-muted">
                             <Calendar size={12} />
                             Publiée le {formatDate(decl.date_publication)}
                           </span>
                         )}
                         {decl.date_depot && (
-                          <span className="text-xs text-neutral-500">
+                          <span className="text-xs text-th-text-muted">
                             Déposée le {formatDate(decl.date_depot)}
                           </span>
                         )}
@@ -989,9 +1155,9 @@ export default function ProfilPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.5 }}
-            className="bg-neutral-900/60 rounded-xl p-4 text-xs text-neutral-500"
+            className="bg-th-bg-secondary/60 rounded-xl p-4 text-xs text-th-text-muted"
           >
-            <p className="font-medium text-neutral-400 mb-1">Sources des données</p>
+            <p className="font-medium text-th-text-muted mb-1">Sources des données</p>
             <p>
               Données issues de la{' '}
               <a href="https://www.hatvp.fr/open-data/" target="_blank" rel="noopener noreferrer" className="underline">

@@ -29,20 +29,20 @@ export default function SearchBar() {
       {/* Ligne principale : recherche + tri */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
-          <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-neutral-500" size={20} />
+          <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-th-text-muted" size={20} />
           <input
             type="text"
             placeholder={t('search.placeholder', lang)}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-12 pr-4 py-3 border-2 border-neutral-600 bg-neutral-800 text-white rounded-lg focus:border-red-500 focus:outline-none transition-colors placeholder:text-neutral-500"
+            className="w-full pl-12 pr-4 py-3 border-2 border-th-border bg-th-card text-th-text rounded-lg focus:border-red-500 focus:outline-none transition-colors placeholder:text-th-text-muted"
           />
         </div>
 
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as SortBy)}
-          className="px-6 py-3 border-2 border-neutral-600 rounded-lg focus:border-red-500 focus:outline-none cursor-pointer bg-neutral-800 text-white transition-colors"
+          className="px-6 py-3 border-2 border-th-border rounded-lg focus:border-red-500 focus:outline-none cursor-pointer bg-th-card text-th-text transition-colors"
         >
           <option value="nom">{t('search.sort.nom', lang)}</option>
           <option value="patrimoine">{t('search.sort.patrimoine', lang)}</option>
@@ -55,7 +55,7 @@ export default function SearchBar() {
         <select
           value={mandatFilter}
           onChange={(e) => setMandatFilter(e.target.value as MandatFilter)}
-          className="px-4 py-2 border-2 border-neutral-600 rounded-lg focus:border-red-500 focus:outline-none cursor-pointer bg-neutral-800 text-white transition-colors text-sm"
+          className="px-4 py-2 border-2 border-th-border rounded-lg focus:border-red-500 focus:outline-none cursor-pointer bg-th-card text-th-text transition-colors text-sm"
         >
           {MANDAT_KEYS.map((opt) => (
             <option key={opt.value} value={opt.value}>

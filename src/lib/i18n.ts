@@ -284,6 +284,15 @@ const translations: Record<string, Record<Lang, string>> = {
   'profil.revenus_par_an': { fr: 'Revenus annuels déclarés', en: 'Declared annual income' },
   'profil.an': { fr: 'an', en: 'year' },
   'profil.click_detail_mandats': { fr: 'Cliquez pour voir le détail par fonction / mandat', en: 'Click for detail by function / mandate' },
+  'profil.total_all_years': { fr: 'Total cumulé (toutes années)', en: 'Cumulative total (all years)' },
+  'profil.no_patrimoine_title': {
+    fr: 'Patrimoine non déclaré',
+    en: 'No wealth declaration',
+  },
+  'profil.patrimoine_en_cours': {
+    fr: 'Les déclarations de situation patrimoniale existent mais sont en cours de traitement ou de contrôle par la HATVP. Les données détaillées seront disponibles prochainement.',
+    en: 'Wealth declarations exist but are being processed or reviewed by HATVP. Detailed data will be available soon.',
+  },
 };
 
 export function t(key: string, lang: Lang): string {

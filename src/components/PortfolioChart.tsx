@@ -28,6 +28,9 @@ export default function PortfolioChart({ immobilier, placements, patrimoine }: P
     { name: t('chart.autres', lang), value: autres, color: COLORS.autres },
   ].filter(item => item.value > 0);
 
+  // Don't show pie chart if there's only one category — it would be 100%
+  if (data.length <= 1) return null;
+
   const formatMoney = (value: number) => {
     if (value >= 1000000) {
       return `${(value / 1000000).toFixed(1)}M\u00A0\u20AC`;
@@ -45,9 +48,9 @@ export default function PortfolioChart({ immobilier, placements, patrimoine }: P
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.5, delay: 0.2 }}
-      className="bg-neutral-800 rounded-xl shadow-lg p-6 border border-neutral-700"
+      className="bg-th-card rounded-xl shadow-lg p-6 border border-th-border"
     >
-      <h3 className="text-xl font-bold text-white mb-4">
+      <h3 className="text-xl font-bold text-th-text mb-4">
         {t('profil.composition', lang)}
       </h3>
       
@@ -69,10 +72,10 @@ export default function PortfolioChart({ immobilier, placements, patrimoine }: P
           </Pie>
           <Tooltip 
             formatter={(value) => formatMoney(Number(value))}
-            contentStyle={{ backgroundColor: '#262626', border: '1px solid #404040', borderRadius: '8px', color: '#fff' }}
-            labelStyle={{ color: '#d4d4d4' }}
+            contentStyle={{ backgroundColor: 'var(--th-tooltip-bg)', border: '1px solid var(--th-tooltip-border)', borderRadius: '8px', color: 'var(--th-tooltip-text)' }}
+            labelStyle={{ color: 'var(--th-text-secondary)' }}
           />
-          <Legend wrapperStyle={{ color: '#d4d4d4' }} />
+          <Legend wrapperStyle={{ color: 'var(--th-text-secondary)' }} />
         </PieChart>
       </ResponsiveContainer>
 
@@ -85,9 +88,9 @@ export default function PortfolioChart({ immobilier, placements, patrimoine }: P
               style={{ backgroundColor: item.color }}
             />
             <div>
-              <p className="text-sm font-semibold text-neutral-300">{item.name}</p>
-              <p className="text-lg font-bold text-white">{formatMoney(item.value)}</p>
-              <p className="text-xs text-neutral-500">{formatPercent(item.value)}</p>
+              <p className="text-sm font-semibold text-th-text-secondary">{item.name}</p>
+              <p className="text-lg font-bold text-th-text">{formatMoney(item.value)}</p>
+              <p className="text-xs text-th-text-muted">{formatPercent(item.value)}</p>
             </div>
           </div>
         ))}

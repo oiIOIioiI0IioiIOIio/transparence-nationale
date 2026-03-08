@@ -917,6 +917,12 @@ def build_resume_hatvp(data: dict) -> dict:
                 "remuneration": _first_financial(item),
                 "fonction": item.get("fonction") or item.get("fonction_label") or item.get("activite") or item.get("activite_label") or "",
             })
+            me = item.get("montant_euro")
+            if me and isinstance(me, (int, float)):
+                d["montant_euro"] = me
+            ra = item.get("revenus_annuels")
+            if ra and isinstance(ra, list) and len(ra) > 0:
+                d["revenus_annuels"] = ra
             if d:
                 details.append(d)
         return details
@@ -929,6 +935,12 @@ def build_resume_hatvp(data: dict) -> dict:
                 "organisme": item.get("organisme") or item.get("organisme_label") or item.get("collectivite") or item.get("collectivite_label") or "",
                 "remuneration": _first_financial(item),
             })
+            me = item.get("montant_euro")
+            if me and isinstance(me, (int, float)):
+                d["montant_euro"] = me
+            ra = item.get("revenus_annuels")
+            if ra and isinstance(ra, list) and len(ra) > 0:
+                d["revenus_annuels"] = ra
             if d:
                 details.append(d)
         return details
@@ -1322,18 +1334,34 @@ def build_full_detail_hatvp(data: dict) -> dict:
     # Map section_name → (details_key, extractor)
     # Each extractor takes a raw item dict and returns a compact detail dict
     def _act(item):
-        return _compact({
+        d = _compact({
             "denomination": item.get("denomination") or item.get("denomination_label") or item.get("employeur") or "",
             "remuneration": _first_financial(item),
             "fonction": item.get("fonction") or item.get("fonction_label") or item.get("activite") or item.get("activite_label") or "",
         })
+        # Preserve montant_euro and revenus_annuels from PDF extraction
+        me = item.get("montant_euro")
+        if me and isinstance(me, (int, float)):
+            d["montant_euro"] = me
+        ra = item.get("revenus_annuels")
+        if ra and isinstance(ra, list) and len(ra) > 0:
+            d["revenus_annuels"] = ra
+        return _compact(d)
 
     def _mandat(item):
-        return _compact({
+        d = _compact({
             "mandat": item.get("mandat") or item.get("mandat_label") or item.get("typeMandat") or item.get("typeMandat_label") or "",
             "organisme": item.get("organisme") or item.get("organisme_label") or item.get("collectivite") or item.get("collectivite_label") or "",
             "remuneration": _first_financial(item),
         })
+        # Preserve montant_euro and revenus_annuels from PDF extraction
+        me = item.get("montant_euro")
+        if me and isinstance(me, (int, float)):
+            d["montant_euro"] = me
+        ra = item.get("revenus_annuels")
+        if ra and isinstance(ra, list) and len(ra) > 0:
+            d["revenus_annuels"] = ra
+        return _compact(d)
 
     def _part(item):
         return _compact({
@@ -1512,6 +1540,29 @@ def build_full_detail_hatvp(data: dict) -> dict:
             for d in decls
             if d and not d.get("dry_run")
         ]
+
+    # ── Pre-compute yearly revenue aggregates ─────────────────────────────────
+    # Aggregate revenus_annuels across all activities and mandates so the
+    # frontend can display last-year totals without any computation.
+    year_totals: dict[str, float] = {}
+    for section_key in ("details_activites", "details_mandats"):
+        for item in resume.get(section_key, []):
+            ra = item.get("revenus_annuels")
+            if not ra or not isinstance(ra, list):
+                continue
+            for ys in ra:
+                annee = ys.get("annee")
+                montant = ys.get("montant")
+                if annee and isinstance(montant, (int, float)) and montant > 0:
+                    year_totals[annee] = year_totals.get(annee, 0.0) + montant
+
+    if year_totals:
+        valid_years = [y for y in year_totals.keys() if y.isdigit()]
+        if valid_years:
+            last_year = max(valid_years, key=lambda y: int(y))
+            resume["last_year_revenus"] = year_totals[last_year]
+            resume["last_year_label"] = last_year
+            resume["total_revenus_all_years"] = sum(year_totals.values())
 
     return resume
 

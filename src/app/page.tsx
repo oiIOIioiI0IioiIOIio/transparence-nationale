@@ -20,13 +20,13 @@ export default function HomePage() {
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       {/* Hero */}
       <section className="text-center mb-16">
-        <h2 className="text-4xl sm:text-5xl font-black text-white mb-4 tracking-tight">
+        <h2 className="text-4xl sm:text-5xl font-black text-th-text mb-4 tracking-tight">
           {t('home.hero.title', lang)}
         </h2>
-        <p className="text-base sm:text-lg text-neutral-300 max-w-2xl mx-auto leading-relaxed">
+        <p className="text-base sm:text-lg text-th-text-secondary max-w-2xl mx-auto leading-relaxed">
           {t('home.hero.lead', lang)}
         </p>
-        <p className="text-xs text-neutral-500 mt-4">
+        <p className="text-xs text-th-text-muted mt-4">
           {t('home.hero.source', lang)}
         </p>
       </section>
@@ -39,21 +39,21 @@ export default function HomePage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
           {/* Annotated example card */}
-          <div className="lg:col-span-2 bg-neutral-800 rounded-2xl border-2 border-red-600 overflow-hidden shadow-xl">
+          <div className="lg:col-span-2 bg-th-card rounded-2xl border-2 border-red-600 overflow-hidden shadow-xl">
             <div className="bg-gradient-to-br from-red-700 to-red-900 h-36 flex items-center justify-center">
-              <div className="w-20 h-20 rounded-full bg-neutral-700 flex items-center justify-center">
-                <span className="text-neutral-400 text-3xl font-black">?</span>
+              <div className="w-20 h-20 rounded-full bg-th-bg-secondary flex items-center justify-center">
+                <span className="text-th-text-muted text-3xl font-black">?</span>
               </div>
             </div>
             <div className="p-5 space-y-3">
-              <h4 className="text-lg font-bold text-white">{t('home.example.name', lang)}</h4>
+              <h4 className="text-lg font-bold text-th-text">{t('home.example.name', lang)}</h4>
               <p className="text-sm text-red-400 font-semibold">{t('home.example.fonction', lang)}</p>
-              <p className="text-xs text-neutral-400 flex items-center gap-1">
-                <MapPin size={12} className="text-neutral-500" />
+              <p className="text-xs text-th-text-muted flex items-center gap-1">
+                <MapPin size={12} className="text-th-text-muted" />
                 {t('home.example.region', lang)}
               </p>
-              <p className="text-xs text-neutral-400 flex items-center gap-1">
-                <UsersIcon size={12} className="text-neutral-500" />
+              <p className="text-xs text-th-text-muted flex items-center gap-1">
+                <UsersIcon size={12} className="text-th-text-muted" />
                 {t('home.example.groupe', lang)}
               </p>
               <div className="flex flex-wrap gap-2 mt-2">
@@ -72,13 +72,13 @@ export default function HomePage() {
             {[
               { icon: Scale, color: 'text-red-400', bg: 'bg-red-900/30', key: 'home.legend.patrimoine' },
               { icon: Wallet, color: 'text-yellow-400', bg: 'bg-yellow-900/30', key: 'home.legend.revenus' },
-              { icon: FileText, color: 'text-neutral-300', bg: 'bg-neutral-800', key: 'home.legend.declarations' },
-              { icon: Briefcase, color: 'text-neutral-300', bg: 'bg-neutral-800', key: 'home.legend.mandats' },
-              { icon: ExternalLink, color: 'text-neutral-300', bg: 'bg-neutral-800', key: 'home.legend.liens' },
+              { icon: FileText, color: 'text-th-text-secondary', bg: 'bg-th-card', key: 'home.legend.declarations' },
+              { icon: Briefcase, color: 'text-th-text-secondary', bg: 'bg-th-card', key: 'home.legend.mandats' },
+              { icon: ExternalLink, color: 'text-th-text-secondary', bg: 'bg-th-card', key: 'home.legend.liens' },
             ].map(({ icon: Icon, color, bg, key }) => (
-              <div key={key} className={`flex items-start gap-3 ${bg} rounded-xl p-3 border border-neutral-700`}>
+              <div key={key} className={`flex items-start gap-3 ${bg} rounded-xl p-3 border border-th-border`}>
                 <Icon size={18} className={`${color} mt-0.5 flex-shrink-0`} />
-                <p className="text-sm text-neutral-200">{t(key, lang)}</p>
+                <p className="text-sm text-th-text-secondary">{t(key, lang)}</p>
               </div>
             ))}
           </div>
@@ -86,11 +86,11 @@ export default function HomePage() {
       </section>
 
       {/* Methodology */}
-      <section className="mb-16 bg-neutral-800 rounded-2xl border border-neutral-700 p-6 sm:p-8">
+      <section className="mb-16 bg-th-card rounded-2xl border border-th-border p-6 sm:p-8">
         <h3 className="text-lg font-bold text-yellow-400 mb-4">
           {t('home.methodo.title', lang)}
         </h3>
-        <ol className="space-y-2 text-sm text-neutral-300 list-decimal list-inside">
+        <ol className="space-y-2 text-sm text-th-text-secondary list-decimal list-inside">
           <li>{t('home.methodo.1', lang)}</li>
           <li>{t('home.methodo.2', lang)}</li>
           <li>{t('home.methodo.3', lang)}</li>

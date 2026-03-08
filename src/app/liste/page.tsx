@@ -51,7 +51,7 @@ export default function ListePage() {
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-red-500 mx-auto mb-4" />
-          <p className="text-neutral-400">{t('loading', lang)}</p>
+          <p className="text-th-text-muted">{t('loading', lang)}</p>
         </div>
       </div>
     );
@@ -69,13 +69,13 @@ export default function ListePage() {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       {/* Hero Section */}
       <div className="text-center mb-12">
-        <h2 className="text-4xl sm:text-5xl font-black text-white mb-4 tracking-tight">
+        <h2 className="text-4xl sm:text-5xl font-black text-th-text mb-4 tracking-tight">
           {t('landing.title', lang)}
         </h2>
-        <p className="text-lg text-neutral-300 max-w-3xl mx-auto">
+        <p className="text-lg text-th-text-secondary max-w-3xl mx-auto">
           {t('landing.subtitle', lang)}
         </p>
-        <div className="flex items-center justify-center gap-6 mt-6 text-sm text-neutral-400">
+        <div className="flex items-center justify-center gap-6 mt-6 text-sm text-th-text-muted">
           <div className="flex items-center gap-2">
             <Database className="w-4 h-4 text-red-500" />
             <span>{totalCount.toLocaleString('fr-FR')} {t('landing.counted', lang)}</span>
@@ -94,10 +94,10 @@ export default function ListePage() {
       {!isSearching && !showAll && (
         <div className="flex items-center gap-3 mb-6">
           <Users className="w-5 h-5 text-red-500" />
-          <h3 className="text-lg font-semibold text-neutral-200">
+          <h3 className="text-lg font-semibold text-th-text-secondary">
             {t('landing.featured', lang)}
           </h3>
-          <span className="text-sm text-neutral-500">
+          <span className="text-sm text-th-text-muted">
             {t('landing.featured.sub', lang)}
           </span>
         </div>
@@ -123,7 +123,7 @@ export default function ListePage() {
                 {t('landing.see_all', lang)} ({totalCount.toLocaleString('fr-FR')} {t('landing.counted', lang)})
                 <ChevronDown className="w-5 h-5" />
               </button>
-              <p className="text-sm text-neutral-500 mt-3">
+              <p className="text-sm text-th-text-muted mt-3">
                 {t('landing.see_all.sub', lang)}
               </p>
             </div>
@@ -137,7 +137,7 @@ export default function ListePage() {
                   setShowAll(false);
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-neutral-800 text-neutral-300 rounded-lg hover:bg-neutral-700 transition-colors border border-neutral-600"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-th-card text-th-text-secondary rounded-lg hover:bg-th-bg-secondary transition-colors border border-th-border"
               >
                 {t('landing.back_featured', lang)}
               </button>
@@ -146,11 +146,11 @@ export default function ListePage() {
         </>
       ) : (
         <div className="text-center py-16">
-          <Search className="w-16 h-16 text-neutral-600 mx-auto mb-4" />
-          <h3 className="text-2xl font-bold text-white mb-2">
+          <Search className="w-16 h-16 text-th-text-muted mx-auto mb-4" />
+          <h3 className="text-2xl font-bold text-th-text mb-2">
             {t('landing.no_result', lang)}
           </h3>
-          <p className="text-neutral-400">
+          <p className="text-th-text-muted">
             {t('landing.no_result.sub', lang)}
           </p>
         </div>
