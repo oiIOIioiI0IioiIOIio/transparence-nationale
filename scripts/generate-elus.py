@@ -1993,9 +1993,7 @@ def enrich_elus_from_csv(elus: list[dict], csv_index: list[dict]) -> None:
         for row in rows:
             url_dossier = (row.get("url_dossier") or "").strip()
             if url_dossier:
-                if "liens" not in elu or not isinstance(elu["liens"], dict):
-                    elu["liens"] = {}
-                elu["liens"]["hatvp"] = f"https://www.hatvp.fr{url_dossier}"
+                elu.setdefault("liens", {})["hatvp"] = f"https://www.hatvp.fr{url_dossier}"
                 break
 
         # 85296 = fake default revenue (≈ député brut annuel) applied in initial data generation
