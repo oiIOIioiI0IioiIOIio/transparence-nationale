@@ -465,15 +465,33 @@ export default function ProfilPage() {
   const totalDettes = elu.hatvp?.total_dettes_euro || 0;
   const patrimoineNet = elu.hatvp?.patrimoine_net_euro || 0;
 
-  // Compute per-year revenue totals from activities and mandates
-  const yearlyRevenues = computeYearlyRevenues(
-    elu.hatvp?.details_activites as Record<string, unknown>[] | undefined,
-    elu.hatvp?.details_mandats as Record<string, unknown>[] | undefined,
-  );
-  // If we have year-by-year data, use the last year; otherwise fall back to total
-  const hasYearlyData = yearlyRevenues.lastYear !== null;
-  const lastYearLabel = yearlyRevenues.lastYear;
-  const lastYearRevenu = yearlyRevenues.lastYearTotal;
+  // Use pre-computed yearly revenue data from JSON when available,
+  // fall back to computing from details on the client side.
+  const precomputedLastYear = elu.hatvp?.last_year_label as string | undefined;
+  const precomputedLastYearRevenus = elu.hatvp?.last_year_revenus as number | undefined;
+  const precomputedTotalAll = elu.hatvp?.total_revenus_all_years as number | undefined;
+
+  let hasYearlyData: boolean;
+  let lastYearLabel: string | null;
+  let lastYearRevenu: number;
+  let yearlyRevenuesGrandTotal: number;
+
+  if (precomputedLastYear && typeof precomputedLastYearRevenus === 'number') {
+    hasYearlyData = true;
+    lastYearLabel = precomputedLastYear;
+    lastYearRevenu = precomputedLastYearRevenus;
+    yearlyRevenuesGrandTotal = precomputedTotalAll || precomputedLastYearRevenus;
+  } else {
+    // Fallback: compute on the client
+    const yearlyRevenues = computeYearlyRevenues(
+      elu.hatvp?.details_activites as Record<string, unknown>[] | undefined,
+      elu.hatvp?.details_mandats as Record<string, unknown>[] | undefined,
+    );
+    hasYearlyData = yearlyRevenues.lastYear !== null;
+    lastYearLabel = yearlyRevenues.lastYear;
+    lastYearRevenu = yearlyRevenues.lastYearTotal;
+    yearlyRevenuesGrandTotal = yearlyRevenues.grandTotal;
+  }
 
   // Sections that have expandable details
   const expandableSectionKeys = hatvpSections
@@ -854,10 +872,10 @@ export default function ProfilPage() {
                             </div>
                           ))}
                           {/* Total across all years */}
-                          {hasYearlyData && yearlyRevenues.grandTotal > lastYearRevenu && (
+                          {hasYearlyData && yearlyRevenuesGrandTotal > lastYearRevenu && (
                             <div className="p-2.5 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg text-sm border border-yellow-300 dark:border-yellow-800 flex items-center justify-between mt-2">
                               <span className="text-yellow-800 dark:text-yellow-300 font-semibold">{t('profil.total_all_years', lang)}</span>
-                              <span className="text-yellow-900 dark:text-yellow-200 font-bold">{formatMoney(yearlyRevenues.grandTotal)}</span>
+                              <span className="text-yellow-900 dark:text-yellow-200 font-bold">{formatMoney(yearlyRevenuesGrandTotal)}</span>
                             </div>
                           )}
                         </motion.div>
