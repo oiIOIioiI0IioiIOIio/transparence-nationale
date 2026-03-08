@@ -35,32 +35,32 @@ export default function PersonCard({ elu, index }: PersonCardProps) {
         <motion.div
           whileHover={{ y: -4, boxShadow: '0 12px 24px rgba(220, 38, 38, 0.15)' }}
           transition={{ duration: 0.2 }}
-          className="bg-neutral-800 rounded-xl overflow-hidden shadow-md hover:shadow-xl cursor-pointer h-full flex flex-row border border-neutral-700 hover:border-red-600 transition-colors"
+          className="bg-th-card rounded-xl overflow-hidden shadow-md hover:shadow-xl cursor-pointer h-full flex flex-row border border-th-border hover:border-red-600 transition-colors"
         >
           {/* Icone placeholder (photos désactivées dans la liste) */}
-          <div className="relative w-20 sm:w-24 min-h-[8rem] flex-shrink-0 bg-gradient-to-br from-red-900/40 to-neutral-800">
+          <div className="relative w-20 sm:w-24 min-h-[8rem] flex-shrink-0 bg-gradient-to-br from-red-100 dark:from-red-900/40 to-gray-50 dark:to-neutral-800">
             <div className="w-full h-full flex items-center justify-center">
-              <User size={40} className="text-neutral-600" />
+              <User size={40} className="text-th-text-muted" />
             </div>
           </div>
 
           {/* Contenu */}
           <div className="flex-1 p-3 sm:p-4 flex flex-col justify-between min-w-0">
             <div>
-              <h3 className="text-base sm:text-lg font-bold text-white truncate">
+              <h3 className="text-base sm:text-lg font-bold text-th-text truncate">
                 {elu.prenom} {elu.nom}
               </h3>
               <p className="text-xs sm:text-sm text-red-400 font-medium truncate mt-0.5">
                 {elu.fonction}
               </p>
               {elu.region && (
-                <p className="text-xs text-neutral-400 flex items-center gap-1 mt-1 truncate">
+                <p className="text-xs text-th-text-muted flex items-center gap-1 mt-1 truncate">
                   <MapPin size={12} className="flex-shrink-0" />
                   {elu.region}
                 </p>
               )}
               {elu.groupe && (
-                <p className="text-xs text-neutral-400 flex items-center gap-1 mt-0.5 truncate">
+                <p className="text-xs text-th-text-muted flex items-center gap-1 mt-0.5 truncate">
                   <Briefcase size={12} className="flex-shrink-0" />
                   {elu.groupe}
                 </p>
@@ -83,7 +83,7 @@ export default function PersonCard({ elu, index }: PersonCardProps) {
                   )}
                 </>
               ) : (
-                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs sm:text-sm font-semibold bg-neutral-700 text-neutral-300">
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs sm:text-sm font-semibold bg-th-bg-secondary text-th-text-secondary">
                   {nbDeclarations > 0
                     ? `${nbDeclarations} ${t('card.declarations', lang)}`
                     : t('card.data_pending', lang)}
