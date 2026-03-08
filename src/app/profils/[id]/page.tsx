@@ -81,7 +81,7 @@ const NB_TO_DETAILS_KEY: Record<string, string> = {
   nb_valeurs_bourse: 'details_valeurs_bourse',
   nb_valeurs_non_bourse: 'details_valeurs_non_bourse',
   nb_instruments_financiers: 'details_instruments_financiers',
-  nb_participations_financieres: 'details_participations',
+  nb_participations_financieres: 'details_participations_financieres',
   nb_fonds: 'details_fonds',
   nb_biens_divers: 'details_biens_divers',
   nb_vehicules: 'details_vehicules',
@@ -91,9 +91,10 @@ const NB_TO_DETAILS_KEY: Record<string, string> = {
   nb_activites_professionnelles: 'details_activites',
   nb_activites_anterieures: 'details_activites_anterieures',
   nb_mandats_electifs: 'details_mandats',
-  nb_participations_organes: 'details_participations',
+  nb_participations_organes: 'details_participations_organes',
   nb_fonctions_benevoles: 'details_fonctions_benevoles',
   nb_activites_conjoint: 'details_activites_conjoint',
+  nb_activites_collaborateurs: 'details_collaborateurs',
   nb_autres_liens_interets: 'details_autres_liens_interets',
 };
 
@@ -139,10 +140,16 @@ const DETAIL_FIELD_LABELS: Record<string, string> = {
   type_instrument: 'Type d\'instrument',
   salaire_euro: 'Salaire',
   revenus_annuels: 'Revenus annuels',
+  // PDF-specific fields
+  montant_euro: 'Montant total',
+  pourcentage_capital: 'Capital détenu',
+  controle_conseil: 'Contrôle activité de conseil',
+  statut: 'Statut',
+  date_declaration: 'Date de déclaration',
 };
 
 // Fields that represent money amounts (displayed with formatMoney)
-const MONEY_FIELDS = new Set(['valeur', 'solde', 'montant', 'remuneration', 'capital_restant_du', 'salaire_euro']);
+const MONEY_FIELDS = new Set(['valeur', 'solde', 'montant', 'remuneration', 'capital_restant_du', 'salaire_euro', 'montant_euro']);
 
 /**
  * Deduplicate an array of detail items by comparing their non-financial string fields.
@@ -223,9 +230,12 @@ function DetailItemRenderer({ item, formatMoney }: { item: Record<string, unknow
   const primaryKey = ['denomination', 'description', 'mandat', 'marque', 'etablissement', 'organisme', 'type'].find(k => item[k] != null && item[k] !== '');
   const primaryValue = primaryKey ? String(item[primaryKey]) : null;
 
+  // Fields to skip in the "other fields" list (metadata or already displayed)
+  const skipFields = new Set([primaryKey || '', 'montants_details', 'description']);
+
   // Collect other fields
   const otherFields = Object.entries(item).filter(([key, val]) => {
-    if (key === primaryKey || val == null || val === '' || val === 0) return false;
+    if (skipFields.has(key) || val == null || val === '' || val === 0) return false;
     return true;
   });
 
@@ -237,6 +247,23 @@ function DetailItemRenderer({ item, formatMoney }: { item: Record<string, unknow
           {otherFields.map(([key, val]) => {
             const label = DETAIL_FIELD_LABELS[key] || key.replace(/_/g, ' ');
             const isMoney = MONEY_FIELDS.has(key);
+
+            // Handle revenus_annuels array display
+            if (key === 'revenus_annuels' && Array.isArray(val)) {
+              return (
+                <div key={key} className="mt-1">
+                  <p className="text-xs text-neutral-500 mb-0.5">{label} :</p>
+                  <div className="ml-2 space-y-0.5">
+                    {(val as { annee?: string; montant?: number }[]).map((ys, idx) => (
+                      <p key={idx} className="text-xs text-yellow-400 font-semibold">
+                        {ys.annee} : {typeof ys.montant === 'number' ? formatMoney(ys.montant) : '—'}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+
             const display = isMoney && typeof val === 'number' ? formatMoney(val) : String(val);
             return (
               <p key={key} className={`text-xs ${isMoney ? 'text-yellow-400 font-semibold' : 'text-neutral-400'}`}>
@@ -361,9 +388,16 @@ export default function ProfilPage() {
     }
   };
 
-  const hasFinancialData = (elu.patrimoine || 0) > 0 || (elu.revenus || 0) > 0 || (elu.immobilier || 0) > 0;
+  const hasPatrimoineData = (elu.patrimoine || 0) > 0 || (elu.immobilier || 0) > 0;
+  const hasRevenusData = (elu.revenus || 0) > 0;
+  const hasFinancialData = hasPatrimoineData || hasRevenusData;
   const placementsMontant = elu.placements_montant || (typeof elu.placements === 'number' ? elu.placements : 0);
   const photoSrc = elu.photo_url || (elu.photo !== '/photos/placeholder.jpg' ? elu.photo : '');
+
+  // Check if this person has DSP (patrimoine) declarations
+  const hasDspDeclarations = elu.declarations_csv?.some(d => d.type.startsWith('DSP'));
+  // Check if mandate type requires patrimoine
+  const hasPatrimoineMandat = elu.types_mandat?.some((tp) => PATRIMOINE_REQUIRED_MANDATE_TYPES.includes(tp));
 
   // Collecter les sections HATVP détaillées qui ont des données
   // Exclure les champs meta (nb_declarations_hatvp) et ne garder que les sections de contenu
@@ -562,78 +596,110 @@ export default function ProfilPage() {
 
         {/* Colonne droite - Stats et détails */}
         <div className="lg:col-span-2 space-y-5 sm:space-y-6">
-          {/* Stats Cards */}
-          {hasFinancialData ? (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.1 }}
-              className="grid grid-cols-2 gap-3 sm:gap-6"
-            >
-              <div className="bg-gradient-to-br from-red-700 to-red-800 rounded-xl shadow-lg p-4 sm:p-6 text-white">
-                <p className="text-red-200 text-xs sm:text-sm font-medium mb-1 sm:mb-2">
-                  Patrimoine Total
-                </p>
-                <p className="text-xl sm:text-3xl font-bold mb-0.5 sm:mb-1">
-                  {formatMoney(elu.patrimoine || 0)}
-                </p>
-                <p className="text-red-200 text-[10px] sm:text-xs">
-                  Déclaré à la HATVP
-                </p>
-              </div>
+          {/* Stats Cards — show revenus and patrimoine independently */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
+            className="space-y-3 sm:space-y-4"
+          >
+            {/* Revenue + Patrimoine Cards */}
+            {hasFinancialData && (
+              <div className={`grid gap-3 sm:gap-6 ${hasPatrimoineData && hasRevenusData ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                {hasPatrimoineData && (
+                  <div className="bg-gradient-to-br from-red-700 to-red-800 rounded-xl shadow-lg p-4 sm:p-6 text-white">
+                    <p className="text-red-200 text-xs sm:text-sm font-medium mb-1 sm:mb-2">
+                      Patrimoine Total
+                    </p>
+                    <p className="text-xl sm:text-3xl font-bold mb-0.5 sm:mb-1">
+                      {formatMoney(elu.patrimoine || 0)}
+                    </p>
+                    <p className="text-red-200 text-[10px] sm:text-xs">
+                      Déclaré à la HATVP
+                    </p>
+                  </div>
+                )}
 
-              <div className="bg-gradient-to-br from-yellow-600 to-yellow-700 rounded-xl shadow-lg p-4 sm:p-6 text-white">
-                <p className="text-yellow-100 text-xs sm:text-sm font-medium mb-1 sm:mb-2">
-                  Revenus Annuels
-                </p>
-                <p className="text-xl sm:text-3xl font-bold mb-0.5 sm:mb-1">
-                  {formatMoney(elu.revenus || 0)}
-                </p>
-                <p className="text-yellow-100 text-[10px] sm:text-xs">
-                  Bruts déclarés
-                </p>
+                {hasRevenusData && (
+                  <div className="bg-gradient-to-br from-yellow-600 to-yellow-700 rounded-xl shadow-lg p-4 sm:p-6 text-white">
+                    <p className="text-yellow-100 text-xs sm:text-sm font-medium mb-1 sm:mb-2">
+                      Revenus déclarés
+                    </p>
+                    <p className="text-xl sm:text-3xl font-bold mb-0.5 sm:mb-1">
+                      {formatMoney(elu.revenus || 0)}
+                    </p>
+                    <p className="text-yellow-100 text-[10px] sm:text-xs">
+                      {t('profil.bruts_declares', lang)}
+                    </p>
+                  </div>
+                )}
               </div>
-            </motion.div>
-          ) : (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.1 }}
-              className="bg-yellow-900/30 border border-yellow-700 rounded-xl p-4 sm:p-6"
-            >
-              <div className="flex items-start gap-3">
-                <Scale size={22} className="text-yellow-500 mt-0.5 flex-shrink-0" />
-                <div>
-                  <h3 className="text-base sm:text-lg font-semibold text-yellow-300 mb-1">
-                    {t('profil.no_financial', lang)}
-                  </h3>
-                  <p className="text-xs sm:text-sm text-yellow-200/80">
-                    {(() => {
-                      // Check if mandate type does not require patrimoine declaration
-                      const hasPatrimoineMandat = elu.types_mandat?.some((tp) => PATRIMOINE_REQUIRED_MANDATE_TYPES.includes(tp));
-                      if (!hasPatrimoineMandat) {
-                        return t('profil.no_patrimoine_mandat', lang);
-                      }
-                      return (
-                        <>
-                          {t('profil.no_financial.sub', lang)}
-                          {elu.liens.hatvp && (
-                            <>
-                              {' '}{t('profil.consult', lang)}{' '}
-                              <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline font-medium">
-                                {t('profil.fiche_hatvp', lang)}
-                              </a>
-                              {' '}{t('profil.for_more', lang)}
-                            </>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </p>
+            )}
+
+            {/* Patrimoine explanation when missing */}
+            {!hasPatrimoineData && (
+              <div className="bg-neutral-800/60 border border-neutral-700 rounded-xl p-4 sm:p-5">
+                <div className="flex items-start gap-3">
+                  <Scale size={20} className="text-neutral-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h3 className="text-sm sm:text-base font-semibold text-neutral-300 mb-1">
+                      {t('profil.no_patrimoine_title', lang)}
+                    </h3>
+                    <p className="text-xs sm:text-sm text-neutral-400">
+                      {(() => {
+                        if (hasDspDeclarations) {
+                          return t('profil.patrimoine_en_cours', lang);
+                        }
+                        if (!hasPatrimoineMandat) {
+                          return t('profil.no_patrimoine_mandat', lang);
+                        }
+                        return (
+                          <>
+                            {t('profil.no_financial.sub', lang)}
+                            {elu.liens.hatvp && (
+                              <>
+                                {' '}{t('profil.consult', lang)}{' '}
+                                <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline font-medium text-red-400">
+                                  {t('profil.fiche_hatvp', lang)}
+                                </a>
+                                {' '}{t('profil.for_more', lang)}
+                              </>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </motion.div>
-          )}
+            )}
+
+            {/* No financial data at all */}
+            {!hasFinancialData && !hatvpSections.length && (
+              <div className="bg-yellow-900/30 border border-yellow-700 rounded-xl p-4 sm:p-6">
+                <div className="flex items-start gap-3">
+                  <Scale size={22} className="text-yellow-500 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h3 className="text-base sm:text-lg font-semibold text-yellow-300 mb-1">
+                      {t('profil.no_financial', lang)}
+                    </h3>
+                    <p className="text-xs sm:text-sm text-yellow-200/80">
+                      {t('profil.no_financial.sub', lang)}
+                      {elu.liens.hatvp && (
+                        <>
+                          {' '}{t('profil.consult', lang)}{' '}
+                          <a href={elu.liens.hatvp} target="_blank" rel="noopener noreferrer" className="underline font-medium">
+                            {t('profil.fiche_hatvp', lang)}
+                          </a>
+                          {' '}{t('profil.for_more', lang)}
+                        </>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </motion.div>
 
           {/* Detail patrimoine HATVP */}
           {hatvpSections.length > 0 && (
@@ -829,8 +895,26 @@ export default function ProfilPage() {
             </motion.div>
           )}
 
-          {/* Graphique - seulement si données financières */}
-          {hasFinancialData && (
+          {/* Observations du déclarant */}
+          {elu.hatvp?.details_observations && (elu.hatvp.details_observations as Record<string, unknown>[]).length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.17 }}
+              className="bg-neutral-800 rounded-xl shadow-lg p-4 sm:p-6 border border-neutral-700"
+            >
+              <h3 className="text-base sm:text-lg font-bold text-white mb-3 flex items-center gap-2">
+                <FileText size={18} className="text-red-500" />
+                Observations du déclarant
+              </h3>
+              {(elu.hatvp.details_observations as Record<string, unknown>[]).map((obs, idx) => (
+                <p key={idx} className="text-sm text-neutral-300 italic">
+                  {String(obs.description || '')}
+                </p>
+              ))}
+            </motion.div>
+          )}
+          {hasPatrimoineData && (
             <PortfolioChart
               immobilier={elu.immobilier || 0}
               placements={placementsMontant}

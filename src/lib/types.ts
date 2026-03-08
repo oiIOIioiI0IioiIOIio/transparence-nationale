@@ -57,9 +57,11 @@ export interface Elu {
     valeur_dettes_euro?: number;
     valeur_revenus_euro?: number;
     // Detailed extracted data (company names, salaries, etc.)
-    details_activites?: { denomination?: string; remuneration?: number; fonction?: string }[];
-    details_mandats?: { mandat?: string; organisme?: string; remuneration?: number }[];
+    details_activites?: { denomination?: string; remuneration?: number; fonction?: string; periode?: string; montant_euro?: number; revenus_annuels?: { annee?: string; montant?: number }[] }[];
+    details_mandats?: { mandat?: string; organisme?: string; remuneration?: number; periode?: string; statut?: string; montant_euro?: number; revenus_annuels?: { annee?: string; montant?: number }[] }[];
     details_participations?: { denomination?: string; type?: string; valeur?: number }[];
+    details_participations_financieres?: { denomination?: string; nombre_parts?: string; pourcentage_capital?: string; montant_euro?: number; controle_conseil?: string }[];
+    details_participations_organes?: { denomination?: string; fonction?: string; remuneration?: number }[];
     details_revenus?: { type?: string; organisme?: string; montant?: number }[];
     details_biens_immobiliers?: { description?: string; nature?: string; lieu?: string; surface?: string; mode_acquisition?: string; date_acquisition?: string; valeur?: number }[];
     details_comptes_bancaires?: { etablissement?: string; type_compte?: string; description?: string; solde?: number }[];
@@ -77,8 +79,13 @@ export interface Elu {
     details_activites_anterieures?: { denomination?: string; fonction?: string; date_debut?: string; date_fin?: string; remuneration?: number }[];
     details_activites_consultant?: { denomination?: string; fonction?: string; remuneration?: number }[];
     details_autres_liens_interets?: { description?: string; organisme?: string }[];
+    details_collaborateurs?: { description?: string }[];
+    details_observations?: { description?: string }[];
     declarations_detail?: { type?: string; label?: string; date_depot?: string; qualite?: string; organe?: string }[];
-    // PDF OCR data
+    // PDF metadata
+    pdf_type_detected?: string;
+    pdf_date_declaration?: string;
+    pdf_neant_sections?: string[];
     pdf_declarations?: { source_pdf?: string; parsed_at?: string; extraction_method?: string; [key: string]: unknown }[];
     [key: string]: unknown;
   };
