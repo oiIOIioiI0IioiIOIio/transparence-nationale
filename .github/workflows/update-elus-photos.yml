@@ -12,13 +12,10 @@ on:
         description: "Nombre de photos à traiter (vide = toutes)"
         required: false
         default: ""
-  workflow_run:
-    workflows:
-      - "🗳️ Mise à jour des données élus"
-    types:
-      - completed
-  schedule:
-    - cron: "0 8 1 * *"
+
+concurrency:
+  group: update-elus-photos
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -26,7 +23,7 @@ permissions:
 jobs:
   update-photos:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    timeout-minutes: 120
 
     steps:
       - name: Checkout
@@ -64,11 +61,14 @@ jobs:
       - name: Vérifier les changements
         id: check_changes
         run: |
-          if git diff --quiet public/photos/ public/data/elus.json 2>/dev/null; then
+          # Stage all photo files (including new untracked files)
+          git add public/photos/ 2>/dev/null || true
+          git add public/data/elus.json 2>/dev/null || true
+          if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            COUNT=$(git diff --name-only public/photos/ | wc -l | tr -d ' ')
+            COUNT=$(git diff --cached --name-only -- public/photos/ | wc -l | tr -d ' ')
             echo "count=$COUNT" >> "$GITHUB_OUTPUT"
           fi
 
@@ -79,8 +79,9 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           DATE=$(date -u +"%Y-%m-%d")
           COUNT=${{ steps.check_changes.outputs.count }}
-          git add public/photos/ public/data/elus.json
-          git commit -m "📸 Mise à jour photos élus — ${DATE} (${COUNT} nouvelles photos)"
+          # Files already staged by check_changes step
+          git commit -m "📸 Mise à jour photos élus — ${DATE} (${COUNT} photos)"
+          git pull --rebase
           git push
 
       - name: Upload artifact photos
@@ -92,11 +93,12 @@ jobs:
           retention-days: 7
 
       - name: Résumé
+        if: always()
         run: |
           if [ "${{ steps.check_changes.outputs.changed }}" == "true" ]; then
             echo "## ✅ Photos mises à jour" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Nouvelles photos** : ${{ steps.check_changes.outputs.count }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Photos modifiées** : ${{ steps.check_changes.outputs.count }}" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Date** : $(date -u +"%Y-%m-%d %H:%M UTC")" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "## ℹ️ Aucune photo modifiée" >> "$GITHUB_STEP_SUMMARY"
