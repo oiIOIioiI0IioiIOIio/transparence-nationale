@@ -60,7 +60,7 @@ NB_TO_DETAILS = {
 
 # ── Regex patterns for description parsing ─────────────────────────────────
 _RE_YEAR_AMOUNT = re.compile(
-    r"(\d{4})\s*:\s*([\d\s\u202f]+?)\s*\u20ac\s*(?:Net|Brut)?",
+    r"(\d{4})\s*:\s*([\d\s\u202f]+)\s*\u20ac\s*(?:Net|Brut)?",
 )
 _RE_PERIOD_DE_A = re.compile(
     r"de\s+(\d{2}/\d{4})\s+[àa]\s+(\d{2}/\d{4})",
@@ -217,10 +217,14 @@ def _split_revenus_by_year_reset(revenus: list[dict]) -> list[list[dict]]:
         return []
 
     groups: list[list[dict]] = [[]]
-    prev_year = ""
+    prev_year = 0
 
     for rev in revenus:
-        year = rev.get("annee", "")
+        year_str = rev.get("annee", "")
+        try:
+            year = int(year_str)
+        except (ValueError, TypeError):
+            year = 0
         if prev_year and year <= prev_year and groups[-1]:
             groups.append([])
         groups[-1].append(rev)
@@ -364,7 +368,7 @@ def _clean_item_revenus(item: dict) -> bool:
     if not isinstance(revenus, list) or len(revenus) <= 1:
         return False
 
-    sorted_revenus = sorted(revenus, key=lambda r: r.get("annee", ""))
+    sorted_revenus = sorted(revenus, key=lambda r: int(r.get("annee", "0") or "0"))
     if sorted_revenus == revenus:
         return False
 
@@ -568,8 +572,10 @@ def fix_elu(data: dict, issues: list[dict]) -> bool:
                 did_split = True
             else:
                 # Still clean individual items
-                _clean_montants_details(item)
-                _clean_item_revenus(item)
+                if _clean_montants_details(item):
+                    modified = True
+                if _clean_item_revenus(item):
+                    modified = True
                 new_parts.append(item)
         if did_split:
             hatvp["details_participations_organes"] = new_parts
@@ -587,7 +593,8 @@ def fix_elu(data: dict, issues: list[dict]) -> bool:
                 did_split = True
             else:
                 # Still clean individual items
-                _clean_item_revenus(item)
+                if _clean_item_revenus(item):
+                    modified = True
                 new_mandats.append(item)
         if did_split:
             hatvp["details_mandats"] = new_mandats
