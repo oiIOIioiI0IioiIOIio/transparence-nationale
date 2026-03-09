@@ -710,15 +710,65 @@ def _extract_participation_financiere_items(text: str) -> list[dict]:
         if pct_match:
             item['pourcentage_capital'] = pct_match.group(1) + ' %'
 
-        # Extract amounts
-        amounts = find_amounts_in_text(block)
-        if amounts:
-            item['montant_euro'] = max(amounts)
-
         # Extract conseil control
         conseil_match = re.search(r"Contr[ôo]le d'une activit[ée] de conseil\s*:\s*(Oui|Non)", block, re.IGNORECASE)
         if conseil_match:
             item['controle_conseil'] = conseil_match.group(1)
+
+        # --- Amount extraction ---
+        # HATVP DIA declarations list TWO separate amounts per participation:
+        #   1. Valeur du capital détenu (capital value = goes into patrimoine)
+        #   2. Revenus générés par la participation (dividends / income)
+        # These must be kept separate; combining them produces absurdly large numbers.
+
+        valeur_capital = None
+        revenus_participation = None
+
+        # Strategy 1: look for explicitly labeled fields (some PDF formats)
+        val_match = re.search(
+            r'Valeur\s+des?\s+parts?\s+(?:ou\s+actions?\s+)?d[ée]tenu(?:e)?s?\s*:?\s*'
+            r'([\d][\d\s\xa0]*(?:[.,]\d{1,2})?)\s*€',
+            block, re.IGNORECASE)
+        if val_match:
+            valeur_capital = parse_amount(val_match.group(1))
+
+        rev_match = re.search(
+            r'Revenus?\s+(?:générés?\s+(?:par\s+ces?\s+participations?|par\s+la\s+participation)?'
+            r'|produits?)\s*:?\s*([\d][\d\s\xa0]*(?:[.,]\d{1,2})?)\s*€',
+            block, re.IGNORECASE)
+        if rev_match:
+            revenus_participation = parse_amount(rev_match.group(1))
+
+        if valeur_capital is None and revenus_participation is None:
+            # Strategy 2: HATVP DIA table format – two unlabeled amounts appear together
+            # before the first labeled field, e.g. "SCI 37 442 280000 €"
+            # where "37 442" = 37 442 € (capital) and "280000" = 280 000 € (revenus).
+            first_label = re.search(
+                r'Nombre de parts|Pourcentage du capital|Contr[ôo]le', block)
+            pre_label_text = block[:first_label.start()] if first_label else block[:300]
+
+            two_amounts = re.search(
+                r'(\d+(?:[\s\xa0]\d{3})*(?:[.,]\d{1,2})?)\s+'
+                r'(\d+(?:[\s\xa0]\d{3})*(?:[.,]\d{1,2})?)\s*€',
+                pre_label_text)
+            if two_amounts:
+                valeur_capital = parse_amount(two_amounts.group(1))
+                revenus_participation = parse_amount(two_amounts.group(2))
+
+        if valeur_capital is not None or revenus_participation is not None:
+            # Store capital and revenues as distinct fields
+            if valeur_capital is not None:
+                item['valeur_capital'] = valeur_capital
+            if revenus_participation is not None:
+                item['revenus_participation'] = revenus_participation
+            # montant_euro = capital value only (what belongs in patrimoine)
+            if valeur_capital is not None and valeur_capital > 0:
+                item['montant_euro'] = valeur_capital
+        else:
+            # Fallback for non-DIA PDFs: use the largest amount found
+            amounts = find_amounts_in_text(block)
+            if amounts:
+                item['montant_euro'] = max(amounts)
 
         if item:
             item['description'] = _clean_text(block[:500])
