@@ -1,0 +1,75 @@
+name: 🔍 Vérification cohérence JSON
+
+on:
+  workflow_dispatch:
+    inputs:
+      fix:
+        description: "Appliquer les corrections (sinon rapport seul)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      limit:
+        description: "Nombre de fichiers à traiter (vide = tous)"
+        required: false
+        default: ""
+
+concurrency:
+  group: verify-coherence
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: "🔍 Vérification de cohérence"
+        id: verify
+        run: |
+          set +e
+          FLAGS=""
+          if [ "${{ github.event.inputs.fix }}" == "true" ]; then
+            FLAGS="$FLAGS --fix"
+          fi
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            FLAGS="$FLAGS --limit ${{ github.event.inputs.limit }}"
+          fi
+          python scripts/verify_coherence.py $FLAGS
+          EXIT_CODE=$?
+          # Exit code 1 = issues detected in dry-run mode (expected, not an error)
+          if [ "${{ github.event.inputs.fix }}" != "true" ] && [ $EXIT_CODE -eq 1 ]; then
+            echo "::notice ::Incohérences détectées (dry-run). Relancer avec fix=true pour corriger."
+            exit 0
+          fi
+          exit $EXIT_CODE
+
+      - name: "💾 Commit et push"
+        if: github.event.inputs.fix == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f public/data/elus/ 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "🔧 Correction cohérence JSON — $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git pull --rebase
+            git push
+            echo "::notice ::✅ Corrections poussées"
+          else
+            echo "::notice ::ℹ️ Aucune correction nécessaire"
+          fi
