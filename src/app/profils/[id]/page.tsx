@@ -143,6 +143,8 @@ const DETAIL_FIELD_LABELS: Record<string, string> = {
   // PDF-specific fields
   montant_euro: 'Montant total',
   pourcentage_capital: 'Capital détenu',
+  valeur_capital: 'Valeur du capital détenu',
+  revenus_participation: 'Revenus générés par la participation',
   controle_conseil: 'Contrôle activité de conseil',
   statut: 'Statut',
   date_declaration: 'Date de déclaration',
@@ -150,7 +152,7 @@ const DETAIL_FIELD_LABELS: Record<string, string> = {
 };
 
 // Fields that represent money amounts (displayed with formatMoney)
-const MONEY_FIELDS = new Set(['valeur', 'solde', 'montant', 'remuneration', 'capital_restant_du', 'salaire_euro', 'montant_euro']);
+const MONEY_FIELDS = new Set(['valeur', 'solde', 'montant', 'remuneration', 'capital_restant_du', 'salaire_euro', 'montant_euro', 'valeur_capital', 'revenus_participation']);
 
 /**
  * Deduplicate an array of detail items by comparing their non-financial string fields.
@@ -277,8 +279,13 @@ function DetailItemRenderer({ item, formatMoney }: { item: Record<string, unknow
   const primaryKey = ['denomination', 'description', 'mandat', 'marque', 'etablissement', 'organisme', 'type'].find(k => item[k] != null && item[k] !== '');
   const primaryValue = primaryKey ? String(item[primaryKey]) : null;
 
+  // When valeur_capital or revenus_participation are present, montant_euro is redundant
+  // (it equals valeur_capital and would duplicate information)
+  const hasDetailedAmounts = 'valeur_capital' in item || 'revenus_participation' in item;
+
   // Fields to skip in the "other fields" list (metadata or already displayed)
   const skipFields = new Set([primaryKey || '', 'montants_details', 'description']);
+  if (hasDetailedAmounts) skipFields.add('montant_euro');
 
   // Collect other fields
   const otherFields = Object.entries(item).filter(([key, val]) => {

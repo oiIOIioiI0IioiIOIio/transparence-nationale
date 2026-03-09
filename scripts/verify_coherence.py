@@ -78,6 +78,12 @@ _RE_ORGANISME_NAME = re.compile(
 _RE_STATUS_TAG = re.compile(r"\[([^\]]+)\]")
 
 # ── Data quality patterns ───────────────────────────────────────────────────
+# Pattern to detect two amounts merged in a participation description
+# e.g. "SCI 37 442 280000 €" → capital 37 442, revenues 280 000
+_RE_TWO_AMOUNTS_MERGED = re.compile(
+    r"(\d+(?:[\s\xa0]\d{3})*(?:[.,]\d{1,2})?)\s+"
+    r"(\d+(?:[\s\xa0]\d{3})*(?:[.,]\d{1,2})?)\s*€"
+)
 # Organisme names that are obviously parsing artifacts (year:amount patterns)
 _RE_GARBAGE_ORGANISME_NAME = re.compile(
     r"^\d{4}\s*:\s*[\d\s\u202f,.]*\u20ac",
@@ -102,6 +108,9 @@ _TRUNCATION_ENDINGS = re.compile(
 # Validation bounds
 _MIN_VALID_YEAR: int = 1990   # HATVP data starts in the 1990s at the earliest
 _MONTANT_TOLERANCE_EUROS: float = 1.0  # Rounding tolerance for montant_euro vs sum
+# Tolerance for comparing root-level patrimoine against PDF-derived figure.
+# Values within 1 € are considered equal (same origin, just rounding).
+_PATRIMOINE_MATCH_TOLERANCE_EUROS: float = 1.0
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -261,6 +270,50 @@ def _check_montant_vs_revenus(item: dict) -> bool:
         return False
     computed = round(sum(r.get("montant", 0) for r in revenus if isinstance(r.get("montant"), (int, float))), 2)
     return abs(computed - montant) > _MONTANT_TOLERANCE_EUROS
+
+
+def _extract_participation_two_amounts(
+    item: dict,
+) -> tuple[float | None, float | None]:
+    """
+    For a participation financière item, try to detect and extract two amounts
+    (valeur_capital and revenus_participation) that were concatenated by the PDF
+    parser into a single oversized montant_euro.
+
+    The HATVP DIA format has two amount columns per participation row:
+      - Valeur du capital détenu
+      - Revenus générés par la participation
+    These can appear merged in the description as e.g. "SCI 37 442 280000 €"
+    where "37 442" is the capital (37 442 €) and "280000" is the revenue.
+
+    Returns (valeur_capital, revenus_participation) or (None, None) if not detected.
+    """
+    desc = item.get("description", "")
+    if not isinstance(desc, str) or not desc:
+        return None, None
+
+    # Only look at the header part (before first labeled field)
+    for sep in ("Nombre de parts", "Pourcentage du capital", "Contrôle"):
+        idx = desc.find(sep)
+        if idx != -1:
+            desc = desc[:idx]
+            break
+
+    m = _RE_TWO_AMOUNTS_MERGED.search(desc)
+    if not m:
+        return None, None
+
+    def _parse(s: str) -> float | None:
+        s = s.replace("\xa0", "").replace(" ", "").replace(",", ".")
+        s = re.sub(r"[^\d.]", "", s)
+        try:
+            return float(s)
+        except ValueError:
+            return None
+
+    cap = _parse(m.group(1))
+    rev = _parse(m.group(2))
+    return cap, rev
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -802,6 +855,40 @@ def check_elu(data: dict) -> list[dict]:
                     ),
                 })
 
+    # ── 14. Merged capital+revenus in financial participations ───────────
+    # HATVP DIA PDFs have two amount columns per participation row:
+    #   Valeur du capital détenu  |  Revenus générés par la participation
+    # The old PDF parser concatenated them into one huge montant_euro.
+    # Detect items that have montant_euro but lack valeur_capital/revenus_participation.
+    fin_parts = hatvp.get("details_participations_financieres")
+    if isinstance(fin_parts, list):
+        for i, item in enumerate(fin_parts):
+            if not isinstance(item, dict):
+                continue
+            if "valeur_capital" in item or "revenus_participation" in item:
+                continue  # already split correctly
+            montant = item.get("montant_euro")
+            if not isinstance(montant, (int, float)):
+                continue
+            cap, rev = _extract_participation_two_amounts(item)
+            if cap is not None and rev is not None:
+                # Flag only when the stored montant_euro is larger than the capital alone,
+                # meaning the two amounts were concatenated into one inflated value.
+                if abs(montant) > abs(cap) + 1 and montant != cap:
+                    issues.append({
+                        "type": "merged_participation_amounts",
+                        "key": "details_participations_financieres",
+                        "index": i,
+                        "montant_euro": montant,
+                        "valeur_capital": cap,
+                        "revenus_participation": rev,
+                        "message": (
+                            f"details_participations_financieres[{i}]: "
+                            f"montant_euro={montant} est le résultat d'une concaténation "
+                            f"de valeur_capital={cap} et revenus_participation={rev}"
+                        ),
+                    })
+
     return issues
 
 
@@ -959,6 +1046,57 @@ def fix_elu(data: dict, issues: list[dict]) -> bool:
     # Pass 10: count_without_details — cannot invent data, leave as-is
     # The count stays, details remain absent → logged as "work in progress"
 
+    # Pass 11: fix merged capital+revenus in financial participations.
+    # Old PDF parser concatenated the two DIA amount columns (valeur_capital and
+    # revenus_participation) into one inflated montant_euro. Extract them separately
+    # and correct montant_euro (= capital value only, which belongs in patrimoine).
+    fin_parts = hatvp.get("details_participations_financieres")
+    if isinstance(fin_parts, list):
+        participation_montant_delta = 0.0  # change in participation total (for patrimoine)
+        for item in fin_parts:
+            if not isinstance(item, dict):
+                continue
+            if "valeur_capital" in item or "revenus_participation" in item:
+                continue  # already split correctly
+            old_montant = item.get("montant_euro")
+            if not isinstance(old_montant, (int, float)):
+                continue
+            cap, rev = _extract_participation_two_amounts(item)
+            if cap is None or rev is None:
+                continue
+            if abs(old_montant) <= abs(cap) + 1 or old_montant == cap:
+                continue  # nothing to fix
+            # Apply the fix
+            item["valeur_capital"] = cap
+            item["revenus_participation"] = rev
+            new_montant = cap if cap > 0 else None
+            if new_montant is not None:
+                item["montant_euro"] = new_montant
+            else:
+                item.pop("montant_euro", None)
+            participation_montant_delta += (new_montant or 0) - old_montant
+            modified = True
+
+        # Recompute patrimoine figures if participation amounts were corrected
+        if modified and participation_montant_delta != 0:
+            hatvp_pdf = data.get("hatvp_pdf")
+            if isinstance(hatvp_pdf, dict):
+                old_brut = hatvp_pdf.get("patrimoine_brut_euro", 0) or 0
+                new_brut = old_brut + participation_montant_delta
+                hatvp_pdf["patrimoine_brut_euro"] = new_brut
+                hatvp_pdf["patrimoine_net_euro"] = new_brut - (hatvp_pdf.get("dettes_euro", 0) or 0)
+                if "participations_euro" in hatvp_pdf:
+                    hatvp_pdf["participations_euro"] = (
+                        (hatvp_pdf.get("participations_euro", 0) or 0) + participation_montant_delta
+                    )
+                # Update root-level patrimoine only when it matches the (now-corrected)
+                # PDF patrimoine figure — this confirms the root value was derived from
+                # the PDF parser and not from another source (e.g., XML declaration).
+                root_patrimoine = data.get("patrimoine")
+                if (isinstance(root_patrimoine, (int, float))
+                        and abs(root_patrimoine - old_brut) < _PATRIMOINE_MATCH_TOLERANCE_EUROS):
+                    data["patrimoine"] = root_patrimoine + participation_montant_delta
+
     return modified
 
 
@@ -1108,6 +1246,7 @@ def main():
                     "invalid_revenus_years": "📅",
                     "invalid_pourcentage": "📊",
                     "montant_vs_revenus_mismatch": "💰",
+                    "merged_participation_amounts": "🔢",
                 }.get(issue["type"], "⚠️ ")
                 summary_lines.append(f"  {icon} {fname}: {issue['message']}")
 

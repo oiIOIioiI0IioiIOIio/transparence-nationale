@@ -61,7 +61,7 @@ export interface Elu {
     details_activites?: { denomination?: string; remuneration?: number; fonction?: string; periode?: string; montant_euro?: number; revenus_annuels?: { annee?: string; montant?: number }[] }[];
     details_mandats?: { mandat?: string; organisme?: string; remuneration?: number; periode?: string; statut?: string; montant_euro?: number; revenus_annuels?: { annee?: string; montant?: number }[] }[];
     details_participations?: { denomination?: string; type?: string; valeur?: number }[];
-    details_participations_financieres?: { denomination?: string; nombre_parts?: string; pourcentage_capital?: string; montant_euro?: number; controle_conseil?: string }[];
+    details_participations_financieres?: { denomination?: string; nombre_parts?: string; pourcentage_capital?: string; valeur_capital?: number; revenus_participation?: number; montant_euro?: number; controle_conseil?: string }[];
     details_participations_organes?: { denomination?: string; fonction?: string; remuneration?: number }[];
     details_revenus?: { type?: string; organisme?: string; montant?: number }[];
     details_biens_immobiliers?: { description?: string; nature?: string; lieu?: string; surface?: string; mode_acquisition?: string; date_acquisition?: string; valeur?: number }[];
