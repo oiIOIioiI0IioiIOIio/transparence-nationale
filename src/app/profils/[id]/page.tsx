@@ -146,6 +146,7 @@ const DETAIL_FIELD_LABELS: Record<string, string> = {
   controle_conseil: 'Contrôle activité de conseil',
   statut: 'Statut',
   date_declaration: 'Date de déclaration',
+  role: 'Rôle',
 };
 
 // Fields that represent money amounts (displayed with formatMoney)

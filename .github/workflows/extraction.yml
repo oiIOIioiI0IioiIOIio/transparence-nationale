@@ -1,24 +1,15 @@
-name: 🔄 Mise à jour XML & OCR PDF
+name: 📥 Extraction des données élus
 
 on:
   workflow_dispatch:
     inputs:
-      refresh_xml:
-        description: "Forcer le re-téléchargement du XML HATVP"
-        required: false
-        default: "true"
+      source:
+        description: "Source des données"
+        required: true
         type: choice
         options:
-          - "true"
-          - "false"
-      process_pdfs:
-        description: "Traiter les PDFs via OCR"
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - "true"
-          - "false"
+          - "xml"
+          - "pdf"
       limit:
         description: "Nombre d'élus à traiter (vide = tous)"
         required: false
@@ -30,14 +21,14 @@ on:
 
 # Prevent overlapping runs from corrupting data
 concurrency:
-  group: update-xml-and-pdf
+  group: extraction-data
   cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
-  update-xml-and-pdf:
+  extract:
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
@@ -63,17 +54,17 @@ jobs:
       - name: Installer les dépendances Python
         run: pip install -r scripts/requirements.txt
 
-      - name: Installer Tesseract OCR (si PDFs activé)
-        if: github.event.inputs.process_pdfs == 'true'
+      - name: Installer Tesseract OCR (si PDF)
+        if: github.event.inputs.source == 'pdf'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq tesseract-ocr tesseract-ocr-fra poppler-utils
 
       # ══════════════════════════════════════════════════════════════════
-      # Phase 1 — XML Processing
+      # Mode XML — Télécharge et parse le XML global HATVP
       # ══════════════════════════════════════════════════════════════════
-      - name: "📥 Mise à jour depuis le XML global"
-        if: github.event.inputs.refresh_xml == 'true'
+      - name: "📥 Extraction depuis le XML global"
+        if: github.event.inputs.source == 'xml'
         run: |
           FLAGS="--refresh-xml --save-every ${{ github.event.inputs.save_every || '100' }}"
           if [ -n "${{ github.event.inputs.limit }}" ]; then
@@ -81,20 +72,16 @@ jobs:
           fi
           python scripts/generate-elus.py $FLAGS
 
-      # NOTE: --enrich-csv-only is already called inside _flush_xml_batch()
-      # during --refresh-xml. We run it here as a safety net to catch any
-      # elus not covered by the batch (e.g. if they had no XML match).
       - name: "📋 Enrichir les métadonnées depuis le CSV"
-        if: github.event.inputs.refresh_xml == 'true'
+        if: github.event.inputs.source == 'xml'
         run: python scripts/generate-elus.py --enrich-csv-only
 
       - name: "💾 Commit intermédiaire XML"
-        if: github.event.inputs.refresh_xml == 'true'
+        if: github.event.inputs.source == 'xml'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add public/data/elus.json
-          # -f and 2>/dev/null: elus/ dir may not exist on first run
           git add -f public/data/elus/ 2>/dev/null || true
           if ! git diff --cached --quiet; then
             COUNT=$(python3 -c "import json; d=json.load(open('public/data/elus.json')); print(len(d))")
@@ -105,10 +92,10 @@ jobs:
           fi
 
       # ══════════════════════════════════════════════════════════════════
-      # Phase 2 — PDF Processing
+      # Mode PDF — OCR des déclarations PDF
       # ══════════════════════════════════════════════════════════════════
       - name: "📄 Traiter les PDFs via OCR"
-        if: github.event.inputs.process_pdfs == 'true'
+        if: github.event.inputs.source == 'pdf'
         run: |
           FLAGS="--batch --save-every ${{ github.event.inputs.save_every || '100' }}"
           if [ -n "${{ github.event.inputs.limit }}" ]; then
@@ -117,7 +104,7 @@ jobs:
           python scripts/parse_pdf.py $FLAGS
 
       - name: "📄 Traiter les PDFs locaux (public/*.pdf)"
-        if: github.event.inputs.process_pdfs == 'true'
+        if: github.event.inputs.source == 'pdf'
         run: |
           for pdf in public/*.pdf; do
             [ -f "$pdf" ] || continue
@@ -126,16 +113,15 @@ jobs:
           done
 
       - name: "🔗 Merger les données PDF dans elus.json"
-        if: github.event.inputs.process_pdfs == 'true'
+        if: github.event.inputs.source == 'pdf'
         run: python scripts/parse_pdf.py --merge-to-main
 
       - name: "💾 Commit intermédiaire PDF"
-        if: github.event.inputs.process_pdfs == 'true'
+        if: github.event.inputs.source == 'pdf'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add public/data/elus.json
-          # These dirs may not exist on first run or if no PDFs were processed
           git add public/data/pdf_declarations/ 2>/dev/null || true
           git add -f public/data/elus/ 2>/dev/null || true
           if ! git diff --cached --quiet; then
@@ -147,20 +133,14 @@ jobs:
           fi
 
       # ══════════════════════════════════════════════════════════════════
-      # Phase 3 — Reorganize + Final Commit
+      # Réorganisation + Commit final
       # ══════════════════════════════════════════════════════════════════
-      # reorganize_data() is smart: it detects if elus.json is "full" (has
-      # details_*) and only then writes individual JSONs. If slim, it just
-      # rebuilds the slim list without overwriting existing full individual
-      # JSONs — safe to run after any combination of XML + PDF processing.
       - name: "📂 Réorganiser les données (slim elus.json + fichiers individuels)"
-        if: github.event.inputs.refresh_xml == 'true' || github.event.inputs.process_pdfs == 'true'
         run: python scripts/generate-elus.py --reorganize
 
       - name: "🔍 Vérifier les changements"
         id: check_changes
         run: |
-          # Stage everything to detect both modified AND new untracked files
           git add public/data/elus.json 2>/dev/null || true
           git add public/data/pdf_declarations/ 2>/dev/null || true
           git add -f public/data/elus/ 2>/dev/null || true
@@ -179,21 +159,21 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           DATE=$(date -u +"%Y-%m-%d")
           COUNT=${{ steps.check_changes.outputs.count }}
-          # Files already staged by check_changes step
-          git commit -m "🔄 Mise à jour XML & PDF — ${DATE} (${COUNT} élus)"
+          SOURCE=${{ github.event.inputs.source }}
+          git commit -m "📥 Extraction ${SOURCE^^} — ${DATE} (${COUNT} élus)"
           git pull --rebase
           git push
 
       - name: "📊 Résumé"
         if: always()
         run: |
+          SOURCE=${{ github.event.inputs.source }}
           if [ "${{ steps.check_changes.outputs.changed }}" == "true" ]; then
             echo "## ✅ Données mises à jour" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Source** : ${SOURCE^^}" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Élus** : ${{ steps.check_changes.outputs.count }}" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Date** : $(date -u +"%Y-%m-%d %H:%M UTC")" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **XML rafraîchi** : ${{ github.event.inputs.refresh_xml }}" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **PDFs traités** : ${{ github.event.inputs.process_pdfs }}" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "## ℹ️ Aucun changement détecté" >> "$GITHUB_STEP_SUMMARY"
           fi
