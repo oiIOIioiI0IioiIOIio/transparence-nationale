@@ -108,6 +108,9 @@ _TRUNCATION_ENDINGS = re.compile(
 # Validation bounds
 _MIN_VALID_YEAR: int = 1990   # HATVP data starts in the 1990s at the earliest
 _MONTANT_TOLERANCE_EUROS: float = 1.0  # Rounding tolerance for montant_euro vs sum
+# Tolerance for comparing root-level patrimoine against PDF-derived figure.
+# Values within 1 € are considered equal (same origin, just rounding).
+_PATRIMOINE_MATCH_TOLERANCE_EUROS: float = 1.0
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -869,8 +872,8 @@ def check_elu(data: dict) -> list[dict]:
                 continue
             cap, rev = _extract_participation_two_amounts(item)
             if cap is not None and rev is not None:
-                # Check that the merged value != capital alone (i.e., two amounts were merged)
-                expected_merged = cap * 1000 + rev  # rough sanity: merged number is larger
+                # Flag only when the stored montant_euro is larger than the capital alone,
+                # meaning the two amounts were concatenated into one inflated value.
                 if abs(montant) > abs(cap) + 1 and montant != cap:
                     issues.append({
                         "type": "merged_participation_amounts",
@@ -1086,10 +1089,13 @@ def fix_elu(data: dict, issues: list[dict]) -> bool:
                     hatvp_pdf["participations_euro"] = (
                         (hatvp_pdf.get("participations_euro", 0) or 0) + participation_montant_delta
                     )
-            # Update root-level patrimoine if it was set from PDF
-            root_patrimoine = data.get("patrimoine")
-            if isinstance(root_patrimoine, (int, float)):
-                data["patrimoine"] = root_patrimoine + participation_montant_delta
+                # Update root-level patrimoine only when it matches the (now-corrected)
+                # PDF patrimoine figure — this confirms the root value was derived from
+                # the PDF parser and not from another source (e.g., XML declaration).
+                root_patrimoine = data.get("patrimoine")
+                if (isinstance(root_patrimoine, (int, float))
+                        and abs(root_patrimoine - old_brut) < _PATRIMOINE_MATCH_TOLERANCE_EUROS):
+                    data["patrimoine"] = root_patrimoine + participation_montant_delta
 
     return modified
 

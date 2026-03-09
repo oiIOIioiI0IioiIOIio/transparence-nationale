@@ -743,8 +743,12 @@ def _extract_participation_financiere_items(text: str) -> list[dict]:
             # Strategy 2: HATVP DIA table format – two unlabeled amounts appear together
             # before the first labeled field, e.g. "SCI 37 442 280000 €"
             # where "37 442" = 37 442 € (capital) and "280000" = 280 000 € (revenus).
+            # NOTE: the same pattern is used in verify_coherence.py (_RE_TWO_AMOUNTS_MERGED)
+            # for detecting and fixing already-parsed data – keep them in sync.
             first_label = re.search(
                 r'Nombre de parts|Pourcentage du capital|Contr[ôo]le', block)
+            # Limit to a generous prefix when no label is found; a company header
+            # is always short (name + two amounts), well within 300 chars.
             pre_label_text = block[:first_label.start()] if first_label else block[:300]
 
             two_amounts = re.search(
