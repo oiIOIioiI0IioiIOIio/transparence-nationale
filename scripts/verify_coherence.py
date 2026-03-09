@@ -77,6 +77,32 @@ _RE_ORGANISME_NAME = re.compile(
 )
 _RE_STATUS_TAG = re.compile(r"\[([^\]]+)\]")
 
+# ── Data quality patterns ───────────────────────────────────────────────────
+# Organisme names that are obviously parsing artifacts (year:amount patterns)
+_RE_GARBAGE_ORGANISME_NAME = re.compile(
+    r"^\d{4}\s*:\s*[\d\s\u202f,.]*\u20ac",
+)
+# Mandat/organisme names that are just metadata keywords
+_GARBAGE_NAME_KEYWORDS: frozenset[str] = frozenset({
+    "commentaire",
+    "net",
+    "brut",
+    "suite",
+    "précédente",
+    "précédent",
+    "total",
+})
+# Denomination names that are clearly numbers (PDF parsing artifacts)
+_RE_NUMERIC_DENOMINATION = re.compile(r"^\d+$")
+# Names ending with French prepositions/articles that suggest truncation
+_TRUNCATION_ENDINGS = re.compile(
+    r"\b(de|du|des|d'|le|la|les|l'|et|ou|en|au|aux|une|un|à|par|sur)\s*$",
+    re.IGNORECASE,
+)
+# Validation bounds
+_MIN_VALID_YEAR: int = 1990   # HATVP data starts in the 1990s at the earliest
+_MONTANT_TOLERANCE_EUROS: float = 1.0  # Rounding tolerance for montant_euro vs sum
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Description parsing helpers
@@ -133,6 +159,108 @@ def _extract_role_text(text: str) -> str:
     # Remove leftover currency/number fragments
     cleaned = re.sub(r"^\s*[€\d\s]+\s*$", "", cleaned)
     return cleaned if len(cleaned) > 1 else ""
+
+
+# ── Data quality helpers ──────────────────────────────────────────────────────
+
+def _is_garbage_organisme_name(name: str) -> bool:
+    """Return True if the organisme name is clearly a parsing artifact.
+
+    Catches patterns like:
+    - Year:amount strings: "2018 : 0 € Net"
+    - Pure whitespace or empty
+    - Very short (≤ 2 meaningful characters)
+    - Pure metadata keywords
+    """
+    if not isinstance(name, str):
+        return True
+    name = name.strip()
+    if not name:
+        return True
+    if _RE_GARBAGE_ORGANISME_NAME.match(name):
+        return True
+    if name.lower() in _GARBAGE_NAME_KEYWORDS:
+        return True
+    # Strip non-alpha characters; if fewer than 2 remain, it's garbage
+    alpha_only = re.sub(r"[^a-zA-ZÀ-ÿ]", "", name)
+    if len(alpha_only) <= 2:
+        return True
+    return False
+
+
+def _is_garbage_mandat_name(name: str) -> bool:
+    """Return True if the mandat name is a metadata keyword artifact.
+
+    Catches patterns like "Commentaire", "Net", "Brut" being mistakenly
+    extracted as mandat names by the PDF parser.
+    """
+    if not isinstance(name, str):
+        return False
+    stripped = name.strip()
+    if not stripped:
+        return False
+    return stripped.lower() in _GARBAGE_NAME_KEYWORDS
+
+
+def _is_truncated_name(name: str) -> bool:
+    """Return True if the name appears to be truncated (ends with a preposition)."""
+    if not isinstance(name, str):
+        return False
+    return bool(_TRUNCATION_ENDINGS.search(name.strip()))
+
+
+def _is_numeric_denomination(name: str) -> bool:
+    """Return True if the denomination is just a number (PDF parsing artifact)."""
+    if not isinstance(name, str):
+        return False
+    return bool(_RE_NUMERIC_DENOMINATION.match(name.strip()))
+
+
+def _validate_revenus_years(revenus: list[dict]) -> list[str]:
+    """
+    Validate year values in revenus_annuels.
+    Returns list of anomalous year strings found.
+    """
+    anomalies = []
+    current_year = datetime.now(timezone.utc).year
+    for rev in revenus:
+        year_str = rev.get("annee", "")
+        try:
+            year = int(year_str)
+            if year < _MIN_VALID_YEAR or year > current_year + 1:
+                anomalies.append(year_str)
+        except (ValueError, TypeError):
+            if year_str:
+                anomalies.append(year_str)
+    return anomalies
+
+
+def _validate_pourcentage(pct_str: str) -> bool:
+    """Return True if the pourcentage_capital value is valid (0-100%)."""
+    if not isinstance(pct_str, str):
+        return True  # Not a string, skip validation
+    pct_clean = pct_str.strip().rstrip("%").strip()
+    try:
+        pct = float(pct_clean)
+        return 0.0 <= pct <= 100.0
+    except (ValueError, TypeError):
+        return True  # Can't parse, skip
+
+
+def _check_montant_vs_revenus(item: dict) -> bool:
+    """
+    Check if montant_euro significantly differs from the sum of revenus_annuels.
+    Returns True if there is a large discrepancy (potential data error).
+    A tolerance of _MONTANT_TOLERANCE_EUROS is allowed for rounding.
+    """
+    montant = item.get("montant_euro")
+    revenus = item.get("revenus_annuels")
+    if not isinstance(montant, (int, float)) or not isinstance(revenus, list):
+        return False
+    if not revenus:
+        return False
+    computed = round(sum(r.get("montant", 0) for r in revenus if isinstance(r.get("montant"), (int, float))), 2)
+    return abs(computed - montant) > _MONTANT_TOLERANCE_EUROS
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -524,6 +652,156 @@ def check_elu(data: dict) -> list[dict]:
                     ),
                 })
 
+    # ── 7. Garbage organisme names (year:amount patterns, too short) ───
+    parts = hatvp.get("details_participations_organes")
+    if isinstance(parts, list):
+        for i, item in enumerate(parts):
+            if not isinstance(item, dict):
+                continue
+            org = item.get("organisme", "")
+            if org and _is_garbage_organisme_name(org):
+                issues.append({
+                    "type": "invalid_organisme_name",
+                    "key": "details_participations_organes",
+                    "index": i,
+                    "value": org,
+                    "message": (
+                        f"details_participations_organes[{i}]: nom d'organisme "
+                        f"invalide (artefact parsing) : {org!r}"
+                    ),
+                })
+
+    # ── 8. Garbage mandat names (metadata keywords mistaken for names) ──
+    mandats = hatvp.get("details_mandats")
+    if isinstance(mandats, list):
+        for i, item in enumerate(mandats):
+            if not isinstance(item, dict):
+                continue
+            mandat = item.get("mandat", "")
+            if mandat and _is_garbage_mandat_name(mandat):
+                issues.append({
+                    "type": "invalid_mandat_name",
+                    "key": "details_mandats",
+                    "index": i,
+                    "value": mandat,
+                    "message": (
+                        f"details_mandats[{i}]: nom de mandat invalide "
+                        f"(mot-clé métadonnée) : {mandat!r}"
+                    ),
+                })
+
+    # ── 9. Numeric denomination in financial participations ─────────────
+    fin_parts = hatvp.get("details_participations_financieres")
+    if isinstance(fin_parts, list):
+        for i, item in enumerate(fin_parts):
+            if not isinstance(item, dict):
+                continue
+            denom = item.get("denomination", "")
+            if denom and _is_numeric_denomination(denom):
+                issues.append({
+                    "type": "invalid_denomination",
+                    "key": "details_participations_financieres",
+                    "index": i,
+                    "value": denom,
+                    "message": (
+                        f"details_participations_financieres[{i}]: dénomination "
+                        f"purement numérique (artefact parsing) : {denom!r}"
+                    ),
+                })
+
+    # ── 10. Truncated names (ending with preposition/article) ───────────
+    for det_key, name_field in (
+        ("details_participations_organes", "organisme"),
+        ("details_mandats", "mandat"),
+    ):
+        items = hatvp.get(det_key)
+        if not isinstance(items, list):
+            continue
+        for i, item in enumerate(items):
+            if not isinstance(item, dict):
+                continue
+            name = item.get(name_field, "")
+            if name and _is_truncated_name(name):
+                # Only flag if the next item doesn't look like a fragment continuation
+                issues.append({
+                    "type": "truncated_name",
+                    "key": det_key,
+                    "index": i,
+                    "field": name_field,
+                    "value": name,
+                    "message": (
+                        f"{det_key}[{i}]: {name_field} tronqué "
+                        f"(se termine par préposition) : {name!r}"
+                    ),
+                })
+
+    # ── 11. Anomalous year values in revenus_annuels ────────────────────
+    for det_key in NB_TO_DETAILS.values():
+        items = hatvp.get(det_key)
+        if not isinstance(items, list):
+            continue
+        for i, item in enumerate(items):
+            if not isinstance(item, dict):
+                continue
+            anomalies = _validate_revenus_years(item.get("revenus_annuels", []))
+            if anomalies:
+                issues.append({
+                    "type": "invalid_revenus_years",
+                    "key": det_key,
+                    "index": i,
+                    "values": anomalies,
+                    "message": (
+                        f"{det_key}[{i}]: années invalides dans "
+                        f"revenus_annuels : {anomalies}"
+                    ),
+                })
+
+    # ── 12. Invalid pourcentage_capital in financial participations ──────
+    fin_parts = hatvp.get("details_participations_financieres")
+    if isinstance(fin_parts, list):
+        for i, item in enumerate(fin_parts):
+            if not isinstance(item, dict):
+                continue
+            pct = item.get("pourcentage_capital", "")
+            if pct and not _validate_pourcentage(pct):
+                issues.append({
+                    "type": "invalid_pourcentage",
+                    "key": "details_participations_financieres",
+                    "index": i,
+                    "value": pct,
+                    "message": (
+                        f"details_participations_financieres[{i}]: "
+                        f"pourcentage_capital invalide (hors 0-100%) : {pct!r}"
+                    ),
+                })
+
+    # ── 13. montant_euro vs sum(revenus_annuels) mismatch ───────────────
+    for det_key in ("details_mandats", "details_participations_organes",
+                     "details_activites", "details_activites_consultant",
+                     "details_fonctions_benevoles"):
+        items = hatvp.get(det_key)
+        if not isinstance(items, list):
+            continue
+        for i, item in enumerate(items):
+            if not isinstance(item, dict):
+                continue
+            if _check_montant_vs_revenus(item):
+                montant = item.get("montant_euro")
+                revenus = item.get("revenus_annuels", [])
+                computed = round(sum(r.get("montant", 0) for r in revenus
+                                     if isinstance(r.get("montant"), (int, float))), 2)
+                issues.append({
+                    "type": "montant_vs_revenus_mismatch",
+                    "key": det_key,
+                    "index": i,
+                    "montant_euro": montant,
+                    "computed": computed,
+                    "message": (
+                        f"{det_key}[{i}]: montant_euro={montant} ≠ "
+                        f"somme revenus_annuels={computed}"
+                    ),
+                })
+
     return issues
 
 
@@ -620,7 +898,56 @@ def fix_elu(data: dict, issues: list[dict]) -> bool:
             if isinstance(item, dict) and _clean_item_revenus(item):
                 modified = True
 
-    # Pass 6: fix nb_* counts to match actual len(details_*)
+    # Pass 6: remove items with invalid (garbage) organisme names.
+    # These are parsing artifacts (e.g., "2018 : 0 € Net") that carry no
+    # useful data; removing them is safer than keeping corrupt entries.
+    parts = hatvp.get("details_participations_organes")
+    if isinstance(parts, list):
+        clean_parts = [
+            item for item in parts
+            if not (isinstance(item, dict)
+                    and _is_garbage_organisme_name(item.get("organisme", "")))
+        ]
+        if len(clean_parts) != len(parts):
+            hatvp["details_participations_organes"] = clean_parts
+            modified = True
+
+    # Pass 7: fix invalid mandat names (metadata keywords mistakenly parsed
+    # as mandat names, e.g., "Commentaire"). Replace with a neutral placeholder
+    # so that the associated revenue data is preserved.
+    mandats = hatvp.get("details_mandats")
+    if isinstance(mandats, list):
+        for item in mandats:
+            if not isinstance(item, dict):
+                continue
+            mandat = item.get("mandat", "")
+            if mandat and _is_garbage_mandat_name(mandat):
+                item["mandat"] = "[mandat non identifié]"
+                modified = True
+
+    # Pass 8: fix montant_euro to match sum of revenus_annuels when they differ.
+    # We trust the individual year amounts over the aggregate montant_euro,
+    # since the latter is often computed during PDF parsing and may be stale.
+    for det_key in ("details_mandats", "details_participations_organes",
+                     "details_activites", "details_activites_consultant",
+                     "details_fonctions_benevoles"):
+        items = hatvp.get(det_key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if _check_montant_vs_revenus(item):
+                revenus = item.get("revenus_annuels", [])
+                computed = round(
+                    sum(r.get("montant", 0) for r in revenus
+                        if isinstance(r.get("montant"), (int, float))),
+                    2,
+                )
+                item["montant_euro"] = computed
+                modified = True
+
+    # Pass 9: fix nb_* counts to match actual len(details_*)
     for nb_key, det_key in NB_TO_DETAILS.items():
         det_val = hatvp.get(det_key)
         if isinstance(det_val, list):
@@ -629,7 +956,7 @@ def fix_elu(data: dict, issues: list[dict]) -> bool:
                 hatvp[nb_key] = actual_len
                 modified = True
 
-    # Pass 7: count_without_details — cannot invent data, leave as-is
+    # Pass 10: count_without_details — cannot invent data, leave as-is
     # The count stays, details remain absent → logged as "work in progress"
 
     return modified
@@ -641,7 +968,21 @@ def fix_elu(data: dict, issues: list[dict]) -> bool:
 
 def verify_after_fix(data: dict) -> list[dict]:
     """Re-check after fixes. Should return only unfixable issues."""
-    return [i for i in check_elu(data) if i["type"] == "count_without_details"]
+    # These types remain after fixing and are considered "work in progress"
+    # or require manual review:
+    # - count_without_details: details arrays missing entirely (can't invent data)
+    # - invalid_denomination: numeric denomination — may need source data to fix
+    # - truncated_name: truncated organisme/mandat names — needs manual review
+    # - invalid_revenus_years: anomalous year values — may need source data
+    # - invalid_pourcentage: impossible pourcentage — may need source data
+    unfixable_types = {
+        "count_without_details",
+        "invalid_denomination",
+        "truncated_name",
+        "invalid_revenus_years",
+        "invalid_pourcentage",
+    }
+    return [i for i in check_elu(data) if i["type"] in unfixable_types]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -717,8 +1058,15 @@ def main():
                 with open(fpath, "w", encoding="utf-8") as fh:
                     json.dump(data, fh, ensure_ascii=False, separators=(",", ":"))
 
+                unfixable_types = {
+                    "count_without_details",
+                    "invalid_denomination",
+                    "truncated_name",
+                    "invalid_revenus_years",
+                    "invalid_pourcentage",
+                }
                 fixable_count = len(issues) - len(
-                    [i for i in issues if i["type"] == "count_without_details"]
+                    [i for i in issues if i["type"] in unfixable_types]
                 )
                 split_count = len(
                     [i for i in issues if i["type"] in ("merged_participations", "merged_mandats")]
@@ -728,7 +1076,9 @@ def main():
                 files_fixed += 1
 
                 if remaining:
-                    wip = ", ".join(i["message"] for i in remaining)
+                    wip = ", ".join(i["message"] for i in remaining[:3])
+                    if len(remaining) > 3:
+                        wip += f" … (+{len(remaining) - 3})"
                     summary_lines.append(
                         f"  🔧 {fname}: {fixable_count} corrigé(s), "
                         f"reste {len(remaining)} work in progress ({wip})"
@@ -738,7 +1088,7 @@ def main():
                         f"  ✅ {fname}: {fixable_count} problème(s) corrigé(s)"
                     )
             else:
-                # All issues are unfixable (count_without_details)
+                # All issues are unfixable (count_without_details, etc.)
                 remaining_issues += len(issues)
                 for issue in issues:
                     summary_lines.append(
@@ -751,6 +1101,13 @@ def main():
                     "merged_participations": "🔀",
                     "merged_mandats": "🔀",
                     "garbage_montants_details": "🗑️",
+                    "invalid_organisme_name": "🔤",
+                    "invalid_mandat_name": "🔤",
+                    "invalid_denomination": "🔤",
+                    "truncated_name": "✂️",
+                    "invalid_revenus_years": "📅",
+                    "invalid_pourcentage": "📊",
+                    "montant_vs_revenus_mismatch": "💰",
                 }.get(issue["type"], "⚠️ ")
                 summary_lines.append(f"  {icon} {fname}: {issue['message']}")
 
@@ -798,6 +1155,7 @@ def main():
     if not args.fix and files_with_issues > 0:
         sys.exit(1)
     sys.exit(0)
+
 
 
 if __name__ == "__main__":
