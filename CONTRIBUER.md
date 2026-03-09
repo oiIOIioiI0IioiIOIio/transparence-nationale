@@ -7,7 +7,7 @@ Merci de votre intérêt pour contribuer à Transparence Nationale !
 ### Signaler un Bug 🐛
 
 1. Vérifiez que le bug n'a pas déjà été signalé
-2. Ouvrez une [issue](https://github.com/votre-username/transparence-nationale/issues) avec :
+2. Ouvrez une [issue](https://github.com/oiIOIioiI0IioiIOIio/transparence-nationale/issues) avec :
    - Description claire du problème
    - Steps pour reproduire
    - Comportement attendu vs réel

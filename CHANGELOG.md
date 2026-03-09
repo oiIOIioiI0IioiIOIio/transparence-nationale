@@ -89,8 +89,7 @@
 - `CHANGELOG.md` — Ce fichier
 
 ### Fichiers supprimés
-- `src/components/PortfolioChart.tsx` — Remplacé par barre de progression simple
-- `public/photos/` — Photos supprimées
+- Photos individuelles dans `public/photos/` — Remplacées par des placeholders
 
 ### Données
 Le format JSON reste compatible. Les nouveaux champs sont optionnels :
