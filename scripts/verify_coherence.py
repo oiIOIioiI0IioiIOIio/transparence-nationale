@@ -2,10 +2,12 @@
 """
 Vérification et correction de cohérence des fichiers JSON individuels.
 
-Agent minimaliste :
   1. Scanne chaque {id}.json dans public/data/elus/
   2. Détecte les incohérences (nb_* ≠ len(details_*), doublons, etc.)
-  3. Corrige **uniquement** les erreurs avérées, ne reformate rien
+  3. Restructure les listes mal formatées :
+     - Sépare les items fusionnés (plusieurs mandats/organismes en un seul)
+     - Trie et nettoie les revenus annuels
+     - Supprime les montants_details parasites
   4. Si l'information manque et qu'on ne peut pas la retrouver → "work in progress"
   5. Re-vérifie après corrections
   6. N'écrit que les fichiers réellement modifiés
@@ -19,6 +21,7 @@ Usage :
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -55,6 +58,338 @@ NB_TO_DETAILS = {
     "nb_activites_anterieures": "details_activites_anterieures",
 }
 
+# ── Regex patterns for description parsing ─────────────────────────────────
+_RE_YEAR_AMOUNT = re.compile(
+    r"(\d{4})\s*:\s*([\d\s\u202f]+?)\s*\u20ac\s*(?:Net|Brut)?",
+)
+_RE_PERIOD_DE_A = re.compile(
+    r"de\s+(\d{2}/\d{4})\s+[àa]\s+(\d{2}/\d{4})",
+)
+_RE_PERIOD_DEPUIS = re.compile(
+    r"depuis\s+le\s+(\d{2}/\d{4})",
+)
+_RE_COMMENT = re.compile(
+    r"Commentaire\s*:\s*(.+?)(?=\d{4}\s*:|Organisme\s*:|$)",
+)
+_RE_ORGANISME_SPLIT = re.compile(r"(?=Organisme\s*:)")
+_RE_ORGANISME_NAME = re.compile(
+    r"Organisme\s*:\s*(.+?)(?=\s*\d{4}\s*:|\s*de\s+\d{2}/\d{4}|\s*depuis\s+le)",
+)
+_RE_STATUS_TAG = re.compile(r"\[([^\]]+)\]")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Description parsing helpers
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _parse_year_amounts(text: str) -> list[dict]:
+    """Extract all year:amount pairs from text."""
+    results = []
+    for m in _RE_YEAR_AMOUNT.finditer(text):
+        annee = m.group(1)
+        montant_str = m.group(2).replace(" ", "").replace("\u202f", "")
+        try:
+            montant = float(montant_str)
+        except ValueError:
+            continue
+        results.append({"annee": annee, "montant": montant})
+    return results
+
+
+def _parse_period(text: str) -> str:
+    """Extract period from text."""
+    m = _RE_PERIOD_DE_A.search(text)
+    if m:
+        return f"{m.group(1)} à {m.group(2)}"
+    m = _RE_PERIOD_DEPUIS.search(text)
+    if m:
+        return f"depuis {m.group(1)}"
+    return ""
+
+
+def _parse_comment(text: str) -> str:
+    """Extract first comment from text."""
+    m = _RE_COMMENT.search(text)
+    if m:
+        return m.group(1).strip()
+    return ""
+
+
+def _extract_role_text(text: str) -> str:
+    """Extract role/function text from a participation block.
+
+    The role is typically non-year, non-period, non-comment text that
+    appears after the year-amount pairs but before the next block.
+    """
+    # Remove known patterns to isolate the role text
+    cleaned = _RE_YEAR_AMOUNT.sub("", text)
+    cleaned = _RE_PERIOD_DE_A.sub("", cleaned)
+    cleaned = _RE_PERIOD_DEPUIS.sub("", cleaned)
+    cleaned = _RE_COMMENT.sub("", cleaned)
+    cleaned = _RE_STATUS_TAG.sub("", cleaned)
+    cleaned = re.sub(r"Organisme\s*:\s*\S+.*?(?=\s|$)", "", cleaned, count=1)
+    # Clean up whitespace
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    # Remove leftover currency/number fragments
+    cleaned = re.sub(r"^\s*[€\d\s]+\s*$", "", cleaned)
+    return cleaned if len(cleaned) > 1 else ""
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Splitting merged items
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _split_merged_participations(item: dict) -> list[dict] | None:
+    """
+    Split a single participation item that contains multiple 'Organisme :' blocks.
+    Returns a list of individual items, or None if no split was needed.
+    """
+    desc = item.get("description", "")
+    if not isinstance(desc, str):
+        return None
+
+    blocks = _RE_ORGANISME_SPLIT.split(desc)
+    blocks = [b.strip() for b in blocks if b.strip()]
+
+    if len(blocks) <= 1:
+        return None
+
+    results = []
+    for block in blocks:
+        new_item: dict = {}
+
+        # Extract organisme name
+        m = _RE_ORGANISME_NAME.search(block)
+        if m:
+            new_item["organisme"] = m.group(1).strip()
+        else:
+            # Fallback: take text after "Organisme :" up to end
+            fallback = re.sub(r"^Organisme\s*:\s*", "", block)
+            name_part = re.split(r"\d{4}\s*:", fallback, maxsplit=1)[0].strip()
+            if name_part:
+                new_item["organisme"] = name_part
+
+        # Extract status tag
+        status_m = _RE_STATUS_TAG.search(block)
+        if status_m:
+            new_item["statut"] = status_m.group(1)
+
+        # Extract period
+        periode = _parse_period(block)
+        if periode:
+            new_item["periode"] = periode
+
+        # Extract comment
+        comment = _parse_comment(block)
+        if comment:
+            new_item["commentaire"] = comment
+
+        # Extract year-amount pairs
+        revenus = _parse_year_amounts(block)
+        if revenus:
+            new_item["revenus_annuels"] = revenus
+            new_item["montant_euro"] = round(
+                sum(r["montant"] for r in revenus), 2
+            )
+
+        # Only add if we got something meaningful
+        if new_item.get("organisme") or new_item.get("revenus_annuels"):
+            results.append(new_item)
+
+    return results if len(results) > 1 else None
+
+
+def _has_duplicate_years(revenus: list[dict]) -> bool:
+    """Check if revenus_annuels has duplicate years (indicates merged items)."""
+    if not revenus:
+        return False
+    years = [r.get("annee", "") for r in revenus if r.get("annee")]
+    return len(years) != len(set(years))
+
+
+def _split_revenus_by_year_reset(revenus: list[dict]) -> list[list[dict]]:
+    """
+    Split revenus_annuels into groups at year resets.
+    A reset occurs when year[i] <= year[i-1] (the sequence goes backwards).
+    Each group corresponds to a different mandat/organisme.
+    """
+    if not revenus:
+        return []
+
+    groups: list[list[dict]] = [[]]
+    prev_year = ""
+
+    for rev in revenus:
+        year = rev.get("annee", "")
+        if prev_year and year <= prev_year and groups[-1]:
+            groups.append([])
+        groups[-1].append(rev)
+        prev_year = year
+
+    return groups
+
+
+def _split_description_into_mandat_blocks(description: str) -> list[str]:
+    """
+    Split a merged mandat description into blocks, one per mandat.
+    Uses the pattern: year-amount sequences separated by non-year text
+    (which is the next mandat's name).
+    """
+    if not description:
+        return [description]
+
+    # Strategy: find year:amount positions, then find text gaps between sequences
+    year_positions = []
+    for m in _RE_YEAR_AMOUNT.finditer(description):
+        year_positions.append((m.start(), m.end()))
+
+    if len(year_positions) <= 1:
+        return [description]
+
+    # Find boundaries: after a year-amount, if there's significant non-year text
+    # before the next year-amount, that's a new mandat block start
+    blocks = []
+    block_start = 0
+
+    for i in range(len(year_positions) - 1):
+        end_of_current = year_positions[i][1]
+        start_of_next = year_positions[i + 1][0]
+        gap_text = description[end_of_current:start_of_next].strip()
+
+        # Remove known inline patterns from gap
+        gap_clean = _RE_PERIOD_DE_A.sub("", gap_text)
+        gap_clean = _RE_PERIOD_DEPUIS.sub("", gap_clean)
+        gap_clean = _RE_COMMENT.sub("", gap_clean)
+        gap_clean = _RE_STATUS_TAG.sub("", gap_clean)
+        gap_clean = re.sub(r"[€\s]+", " ", gap_clean).strip()
+
+        # If remaining gap has alphabetic content (a mandat name), it's a new block
+        alpha_content = re.sub(r"[^a-zA-ZÀ-ÿ]", "", gap_clean)
+        if len(alpha_content) >= 3:
+            blocks.append(description[block_start:end_of_current])
+            block_start = end_of_current
+
+    # Last block
+    blocks.append(description[block_start:])
+
+    return [b.strip() for b in blocks if b.strip()]
+
+
+def _extract_mandat_name_from_block(block: str) -> str:
+    """Extract the mandat name from a description block."""
+    # Remove status tags
+    cleaned = _RE_STATUS_TAG.sub("", block).strip()
+    # The mandat name is the text before the first year pattern
+    parts = re.split(r"\d{4}\s*:", cleaned, maxsplit=1)
+    name = parts[0].strip() if parts else ""
+    # Clean up
+    name = re.sub(r"\s+", " ", name).strip()
+    # Remove trailing/leading punctuation
+    name = name.strip(" -–—·,;:")
+    return name
+
+
+def _split_merged_mandats(item: dict) -> list[dict] | None:
+    """
+    Split a single mandat item that contains multiple mandats
+    (detected by duplicate years in revenus_annuels).
+    Returns a list of individual items, or None if no split was needed.
+    """
+    revenus = item.get("revenus_annuels", [])
+    if not isinstance(revenus, list) or not _has_duplicate_years(revenus):
+        return None
+
+    # Split revenues by year resets
+    rev_groups = _split_revenus_by_year_reset(revenus)
+    if len(rev_groups) <= 1:
+        return None
+
+    # Try to split description into blocks
+    desc = item.get("description", "")
+    desc_blocks = _split_description_into_mandat_blocks(desc) if desc else []
+
+    results = []
+    for i, rev_group in enumerate(rev_groups):
+        new_item: dict = {}
+
+        # Try to get mandat name from description block
+        if i < len(desc_blocks):
+            block = desc_blocks[i]
+            name = _extract_mandat_name_from_block(block)
+            if name:
+                new_item["mandat"] = name
+
+            # Extract period from this block
+            periode = _parse_period(block)
+            if periode:
+                new_item["periode"] = periode
+
+            # Extract comment
+            comment = _parse_comment(block)
+            if comment:
+                new_item["commentaire"] = comment
+
+            # Extract status
+            status_m = _RE_STATUS_TAG.search(block)
+            if status_m:
+                new_item["statut"] = status_m.group(1)
+        elif i == 0:
+            # Fallback: use the original item's structured fields for first group
+            if item.get("mandat"):
+                new_item["mandat"] = item["mandat"]
+            if item.get("periode"):
+                new_item["periode"] = item["periode"]
+            if item.get("commentaire"):
+                new_item["commentaire"] = item["commentaire"]
+            if item.get("statut"):
+                new_item["statut"] = item["statut"]
+
+        # Set revenues for this group
+        new_item["revenus_annuels"] = rev_group
+        new_item["montant_euro"] = round(
+            sum(r.get("montant", 0) for r in rev_group), 2
+        )
+
+        results.append(new_item)
+
+    return results if len(results) > 1 else None
+
+
+def _clean_item_revenus(item: dict) -> bool:
+    """
+    Sort revenus_annuels by year and recalculate montant_euro.
+    Returns True if item was modified.
+    """
+    revenus = item.get("revenus_annuels")
+    if not isinstance(revenus, list) or len(revenus) <= 1:
+        return False
+
+    sorted_revenus = sorted(revenus, key=lambda r: r.get("annee", ""))
+    if sorted_revenus == revenus:
+        return False
+
+    item["revenus_annuels"] = sorted_revenus
+    return True
+
+
+def _clean_montants_details(item: dict) -> bool:
+    """
+    Remove montants_details if it's garbage (duplicated/padding values).
+    Returns True if item was modified.
+    """
+    md = item.get("montants_details")
+    if not isinstance(md, list):
+        return False
+
+    # montants_details is garbage if it has many duplicate values or looks
+    # like date-encoded numbers (20201.0, 20202.0, etc.)
+    if len(md) == 0:
+        return False
+
+    # Always remove: the structured revenus_annuels is the source of truth
+    del item["montants_details"]
+    return True
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Detection helpers
@@ -80,7 +415,6 @@ def check_elu(data: dict) -> list[dict]:
       - type: str (issue category)
       - key / detail_key: affected fields
       - message: human description
-      - fix: callable(hatvp) or None
     """
     issues: list[dict] = []
     hatvp = data.get("hatvp")
@@ -106,7 +440,6 @@ def check_elu(data: dict) -> list[dict]:
                 })
 
         # ── 2. nb_* ≠ len(details_*) ──────────────────────────────────
-        # (computed after dedup so we can fix both in one pass)
         if nb_val is not None and isinstance(det_val, list):
             effective_len = len(det_val)
             if nb_val != effective_len:
@@ -132,6 +465,60 @@ def check_elu(data: dict) -> list[dict]:
                     f"(ne peut pas inventer → work in progress)"
                 ),
             })
+
+    # ── 4. Merged participations (multiple "Organisme :" in one item) ──
+    parts = hatvp.get("details_participations_organes")
+    if isinstance(parts, list):
+        for i, item in enumerate(parts):
+            desc = item.get("description", "")
+            if isinstance(desc, str) and desc.count("Organisme :") > 1:
+                issues.append({
+                    "type": "merged_participations",
+                    "key": "details_participations_organes",
+                    "index": i,
+                    "count": desc.count("Organisme :"),
+                    "message": (
+                        f"details_participations_organes[{i}]: "
+                        f"{desc.count('Organisme :')} organismes fusionnés"
+                    ),
+                })
+
+    # ── 5. Merged mandats (duplicate years in revenus_annuels) ─────────
+    mandats = hatvp.get("details_mandats")
+    if isinstance(mandats, list):
+        for i, item in enumerate(mandats):
+            revenus = item.get("revenus_annuels", [])
+            if isinstance(revenus, list) and _has_duplicate_years(revenus):
+                years = [r.get("annee", "") for r in revenus]
+                n_groups = len(_split_revenus_by_year_reset(revenus))
+                issues.append({
+                    "type": "merged_mandats",
+                    "key": "details_mandats",
+                    "index": i,
+                    "count": n_groups,
+                    "message": (
+                        f"details_mandats[{i}]: "
+                        f"{n_groups} mandats fusionnés (années en double)"
+                    ),
+                })
+
+    # ── 6. Garbage montants_details ────────────────────────────────────
+    for det_key in ("details_participations_organes", "details_mandats",
+                     "details_fonctions_benevoles", "details_activites",
+                     "details_activites_consultant"):
+        items = hatvp.get(det_key)
+        if not isinstance(items, list):
+            continue
+        for i, item in enumerate(items):
+            if isinstance(item, dict) and "montants_details" in item:
+                issues.append({
+                    "type": "garbage_montants_details",
+                    "key": det_key,
+                    "index": i,
+                    "message": (
+                        f"{det_key}[{i}]: montants_details parasite à supprimer"
+                    ),
+                })
 
     return issues
 
@@ -169,7 +556,64 @@ def fix_elu(data: dict, issues: list[dict]) -> bool:
                 hatvp[det_key] = deduped
                 modified = True
 
-    # Pass 2: fix nb_* counts to match actual len(details_*)
+    # Pass 2: split merged participations
+    parts = hatvp.get("details_participations_organes")
+    if isinstance(parts, list):
+        new_parts: list[dict] = []
+        did_split = False
+        for item in parts:
+            split_result = _split_merged_participations(item)
+            if split_result:
+                new_parts.extend(split_result)
+                did_split = True
+            else:
+                # Still clean individual items
+                _clean_montants_details(item)
+                _clean_item_revenus(item)
+                new_parts.append(item)
+        if did_split:
+            hatvp["details_participations_organes"] = new_parts
+            modified = True
+
+    # Pass 3: split merged mandats
+    mandats = hatvp.get("details_mandats")
+    if isinstance(mandats, list):
+        new_mandats: list[dict] = []
+        did_split = False
+        for item in mandats:
+            split_result = _split_merged_mandats(item)
+            if split_result:
+                new_mandats.extend(split_result)
+                did_split = True
+            else:
+                # Still clean individual items
+                _clean_item_revenus(item)
+                new_mandats.append(item)
+        if did_split:
+            hatvp["details_mandats"] = new_mandats
+            modified = True
+
+    # Pass 4: clean garbage montants_details in all detail arrays
+    for det_key in ("details_participations_organes", "details_mandats",
+                     "details_fonctions_benevoles", "details_activites",
+                     "details_activites_consultant"):
+        items = hatvp.get(det_key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if isinstance(item, dict) and _clean_montants_details(item):
+                modified = True
+
+    # Pass 5: sort revenus_annuels in all detail arrays
+    for det_key in NB_TO_DETAILS.values():
+        items = hatvp.get(det_key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if isinstance(item, dict) and _clean_item_revenus(item):
+                modified = True
+
+    # Pass 6: fix nb_* counts to match actual len(details_*)
     for nb_key, det_key in NB_TO_DETAILS.items():
         det_val = hatvp.get(det_key)
         if isinstance(det_val, list):
@@ -178,7 +622,7 @@ def fix_elu(data: dict, issues: list[dict]) -> bool:
                 hatvp[nb_key] = actual_len
                 modified = True
 
-    # Pass 3: count_without_details — cannot invent data, leave as-is
+    # Pass 7: count_without_details — cannot invent data, leave as-is
     # The count stays, details remain absent → logged as "work in progress"
 
     return modified
@@ -227,6 +671,7 @@ def main():
     total_issues = 0
     total_fixed = 0
     remaining_issues = 0
+    total_splits = 0
 
     summary_lines: list[str] = []
 
@@ -268,7 +713,11 @@ def main():
                 fixable_count = len(issues) - len(
                     [i for i in issues if i["type"] == "count_without_details"]
                 )
+                split_count = len(
+                    [i for i in issues if i["type"] in ("merged_participations", "merged_mandats")]
+                )
                 total_fixed += fixable_count
+                total_splits += split_count
                 files_fixed += 1
 
                 if remaining:
@@ -290,7 +739,12 @@ def main():
                     )
         else:
             for issue in issues:
-                icon = "⏳" if issue["type"] == "count_without_details" else "⚠️ "
+                icon = {
+                    "count_without_details": "⏳",
+                    "merged_participations": "🔀",
+                    "merged_mandats": "🔀",
+                    "garbage_montants_details": "🗑️",
+                }.get(issue["type"], "⚠️ ")
                 summary_lines.append(f"  {icon} {fname}: {issue['message']}")
 
     # ── Summary ────────────────────────────────────────────────────────────
@@ -303,11 +757,11 @@ def main():
     if args.fix:
         print(f"  Fichiers corrigés : {files_fixed}")
         print(f"  Corrections appliquées : {total_fixed}")
+        print(f"  Listes fusionnées séparées : {total_splits}")
         print(f"  Problèmes restants (work in progress) : {remaining_issues}")
     print()
 
     if summary_lines:
-        # In CI, limit output to first 50 lines + summary
         max_lines = 50
         if len(summary_lines) > max_lines:
             for line in summary_lines[:max_lines]:
@@ -329,6 +783,7 @@ def main():
             if args.fix:
                 fh.write(f"| Fichiers corrigés | {files_fixed} |\n")
                 fh.write(f"| Corrections appliquées | {total_fixed} |\n")
+                fh.write(f"| Listes séparées | {total_splits} |\n")
                 fh.write(f"| Restants (work in progress) | {remaining_issues} |\n")
             fh.write("\n")
 
