@@ -14,7 +14,7 @@ Si non installé : [Télécharger Node.js](https://nodejs.org/)
 ### 2. Installation
 ```bash
 # Extraire l'archive ou cloner le repo
-cd transparence-nationale-v2
+cd transparence-nationale
 
 # Installer les dépendances
 npm install
@@ -48,25 +48,38 @@ npm run dev
 ## 📂 Structure des fichiers
 
 ```
-transparence-nationale-v2/
+transparence-nationale/
 ├── src/
 │   ├── app/
 │   │   ├── page.tsx              ← Page d'accueil avec explication
 │   │   ├── layout.tsx            ← Layout avec Header et Footer
 │   │   ├── globals.css           ← Styles + mode nuit
+│   │   ├── liste/
+│   │   │   └── page.tsx          ← Liste complète des élus
 │   │   └── profils/[id]/
 │   │       └── page.tsx          ← Page profil détaillée
 │   ├── components/
-│   │   ├── Header.tsx            ← Header avec bouton mode nuit
+│   │   ├── LayoutShell.tsx       ← Shell layout avec header et footer
 │   │   ├── PersonCard.tsx        ← Carte élu (sans photo)
+│   │   ├── PortfolioChart.tsx    ← Graphique patrimoine (Recharts)
 │   │   └── SearchBar.tsx         ← Recherche + tri avancé
 │   ├── hooks/
 │   │   └── useElus.ts            ← Store Zustand avec état global
 │   └── lib/
-│       └── types.ts              ← Types TypeScript complets
+│       ├── types.ts              ← Types TypeScript complets
+│       ├── theme.ts              ← Utilitaires thème jour/nuit
+│       └── i18n.ts               ← Traductions FR/EN
+├── scripts/
+│   ├── generate-elus.py          ← Extraction données HATVP (XML)
+│   ├── parse_pdf.py              ← Parsing PDF avec OCR
+│   ├── scrape-photos.py          ← Téléchargement photos
+│   ├── verify_coherence.py       ← Validation données
+│   ├── progress.py               ← Suivi progression
+│   └── requirements.txt          ← Dépendances Python
 ├── public/
 │   └── data/
-│       └── elus.json             ← Base de données (exemple fourni)
+│       ├── elus.json             ← Base de données agrégée
+│       └── elus/                 ← Fichiers individuels par élu
 ├── package.json                  ← Dépendances
 ├── next.config.js                ← Config Next.js optimisée
 ├── tailwind.config.js            ← Config Tailwind + mode nuit
