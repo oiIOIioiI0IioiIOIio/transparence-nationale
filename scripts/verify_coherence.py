@@ -99,6 +99,9 @@ _TRUNCATION_ENDINGS = re.compile(
     r"\b(de|du|des|d'|le|la|les|l'|et|ou|en|au|aux|une|un|à|par|sur)\s*$",
     re.IGNORECASE,
 )
+# Validation bounds
+_MIN_VALID_YEAR: int = 1990   # HATVP data starts in the 1990s at the earliest
+_MONTANT_TOLERANCE_EUROS: float = 1.0  # Rounding tolerance for montant_euro vs sum
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -224,7 +227,7 @@ def _validate_revenus_years(revenus: list[dict]) -> list[str]:
         year_str = rev.get("annee", "")
         try:
             year = int(year_str)
-            if year < 1990 or year > current_year + 1:
+            if year < _MIN_VALID_YEAR or year > current_year + 1:
                 anomalies.append(year_str)
         except (ValueError, TypeError):
             if year_str:
@@ -248,7 +251,7 @@ def _check_montant_vs_revenus(item: dict) -> bool:
     """
     Check if montant_euro significantly differs from the sum of revenus_annuels.
     Returns True if there is a large discrepancy (potential data error).
-    A tolerance of 1€ is allowed for rounding.
+    A tolerance of _MONTANT_TOLERANCE_EUROS is allowed for rounding.
     """
     montant = item.get("montant_euro")
     revenus = item.get("revenus_annuels")
@@ -257,7 +260,7 @@ def _check_montant_vs_revenus(item: dict) -> bool:
     if not revenus:
         return False
     computed = round(sum(r.get("montant", 0) for r in revenus if isinstance(r.get("montant"), (int, float))), 2)
-    return abs(computed - montant) > 1.0
+    return abs(computed - montant) > _MONTANT_TOLERANCE_EUROS
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1109,11 +1112,6 @@ def main():
                 summary_lines.append(f"  {icon} {fname}: {issue['message']}")
 
     # ── Summary ────────────────────────────────────────────────────────────
-    # Build issue type breakdown
-    issue_type_counts: dict[str, int] = {}
-    for line in summary_lines:
-        pass  # counts already accumulated in total_issues
-
     print("═" * 60)
     print("📊 RÉSUMÉ")
     print("═" * 60)
