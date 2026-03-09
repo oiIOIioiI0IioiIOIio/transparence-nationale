@@ -42,6 +42,7 @@ jobs:
       - name: "🔍 Vérification de cohérence"
         id: verify
         run: |
+          set +e
           FLAGS=""
           if [ "${{ github.event.inputs.fix }}" == "true" ]; then
             FLAGS="$FLAGS --fix"
@@ -49,7 +50,14 @@ jobs:
           if [ -n "${{ github.event.inputs.limit }}" ]; then
             FLAGS="$FLAGS --limit ${{ github.event.inputs.limit }}"
           fi
-          python scripts/verify_coherence.py $FLAGS || true
+          python scripts/verify_coherence.py $FLAGS
+          EXIT_CODE=$?
+          # Exit code 1 = issues detected in dry-run mode (expected, not an error)
+          if [ "${{ github.event.inputs.fix }}" != "true" ] && [ $EXIT_CODE -eq 1 ]; then
+            echo "::notice ::Incohérences détectées (dry-run). Relancer avec fix=true pour corriger."
+            exit 0
+          fi
+          exit $EXIT_CODE
 
       - name: "💾 Commit et push"
         if: github.event.inputs.fix == 'true'

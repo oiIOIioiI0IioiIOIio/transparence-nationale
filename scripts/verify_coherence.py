@@ -290,7 +290,8 @@ def main():
                     )
         else:
             for issue in issues:
-                summary_lines.append(f"  {'⚠️ ' if issue['type'] != 'count_without_details' else '⏳'} {fname}: {issue['message']}")
+                icon = "⏳" if issue["type"] == "count_without_details" else "⚠️ "
+                summary_lines.append(f"  {icon} {fname}: {issue['message']}")
 
     # ── Summary ────────────────────────────────────────────────────────────
     print("═" * 60)
