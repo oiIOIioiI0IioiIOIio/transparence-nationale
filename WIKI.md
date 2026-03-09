@@ -357,7 +357,7 @@ Voici quelques pistes pour adapter ce projet à d'autres pays :
 - **Format** : HTML structuré, publication régulière
 - **Particularité** : Pas de patrimoine déclaré, mais intérêts financiers (revenus extérieurs, cadeaux, voyages, propriétés)
 
-#### Etats-Unis
+#### États-Unis
 - **Source** : [Office of Government Ethics](https://www.oge.gov/) — Financial Disclosure Reports
 - **Format** : PDF (formulaires OGE-278e), certains en XML
 - **Particularité** : Déclarations très détaillées mais souvent en PDF scanné. Le parseur OCR de ce projet serait utile.
