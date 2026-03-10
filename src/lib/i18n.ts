@@ -274,6 +274,18 @@ const translations: Record<string, Record<Lang, string>> = {
   'chart.immobilier': { fr: 'Immobilier', en: 'Real Estate' },
   'chart.placements': { fr: 'Placements', en: 'Investments' },
   'chart.autres': { fr: 'Autres', en: 'Other' },
+  // Liste page D3 stats
+  'stats.title': { fr: 'Aperçu des données', en: 'Data overview' },
+  'stats.mandats': { fr: 'Répartition par type de mandat', en: 'Breakdown by mandate type' },
+  'stats.patrimoine': { fr: 'Distribution du patrimoine', en: 'Wealth distribution' },
+  'stats.count': { fr: 'élu·es', en: 'officials' },
+  'stats.click_filter': { fr: 'Cliquez sur une barre pour filtrer', en: 'Click a bar to filter' },
+  'stats.range_k': { fr: 'K €', en: 'K €' },
+  'stats.range_m': { fr: 'M €', en: 'M €' },
+  'stats.no_data': { fr: 'Sans déclaration', en: 'No declaration' },
+  'stats.total_with_data': { fr: 'avec patrimoine déclaré', en: 'with declared wealth' },
+  'stats.toggle_show': { fr: 'Afficher les statistiques', en: 'Show statistics' },
+  'stats.toggle_hide': { fr: 'Masquer les statistiques', en: 'Hide statistics' },
   // New keys
   'profil.no_patrimoine_mandat': {
     fr: 'Son mandat n\'impose pas la déclaration de patrimoine. Seules les déclarations de situation patrimoniale des membres du gouvernement et des membres du collège de la Haute Autorité sont publiées sur hatvp.fr.',
