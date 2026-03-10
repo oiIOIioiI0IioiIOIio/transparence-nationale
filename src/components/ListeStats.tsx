@@ -154,11 +154,8 @@ export default function ListeStats({ elus, mandatFilter, onMandatFilter }: Liste
           .on('click', (_event, d) => {
             onMandatFilter(d.type === mandatFilter ? '' : d.type as MandatFilter);
           })
-          .on('touchend', (_event, d) => {
-            onMandatFilter(d.type === mandatFilter ? '' : d.type as MandatFilter);
-          })
           .on('keydown', (event: KeyboardEvent, d) => {
-            if (event.key === 'Enter' || event.key === ' ') {
+            if (event.key === 'Enter') {
               event.preventDefault();
               onMandatFilter(d.type === mandatFilter ? '' : d.type as MandatFilter);
             }

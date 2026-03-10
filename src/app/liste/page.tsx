@@ -114,7 +114,10 @@ export default function ListePage() {
               {Array.from({ length: totalPages }, (_, i) => i)
                 .filter(i => i === 0 || i === totalPages - 1 || Math.abs(i - currentPage) <= 2)
                 .reduce<(number | 'ellipsis')[]>((acc, i, idx, arr) => {
-                  if (idx > 0 && i - (arr[idx - 1]) > 1) acc.push('ellipsis');
+                  if (idx > 0) {
+                    const prev = arr[idx - 1] as number;
+                    if (i - prev > 1) acc.push('ellipsis');
+                  }
                   acc.push(i);
                   return acc;
                 }, [])

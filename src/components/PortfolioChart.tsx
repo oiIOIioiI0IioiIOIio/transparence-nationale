@@ -100,7 +100,7 @@ export default function PortfolioChart({ immobilier, placements, patrimoine }: P
         })
         .on('touchstart', function (_event, d) {
           setHoveredIndex(prev => prev === d.index ? null : d.index);
-        }, { passive: true });
+        });
 
       // Center total
       g.append('text')
