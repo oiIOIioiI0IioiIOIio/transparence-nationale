@@ -1,50 +1,48 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useElus, loadElus } from '@/hooks/useElus';
 import PersonCard from '@/components/PersonCard';
+import PersonRow from '@/components/PersonRow';
 import SearchBar from '@/components/SearchBar';
-import { Loader2, ChevronDown, Users, Database, Search } from 'lucide-react';
-import { Elu } from '@/lib/types';
+import ListeStats from '@/components/ListeStats';
+import { Loader2, ChevronLeft, ChevronRight, Database, Search, LayoutGrid, List } from 'lucide-react';
+import { MandatFilter } from '@/lib/types';
 import { useLang, t } from '@/lib/i18n';
 
-// Nombre de fiches "vedettes" affichées par défaut
-const FEATURED_COUNT = 12;
+// Cards per page — keeps DOM light on mobile and desktop
+const PAGE_SIZE = 60;
 
-/**
- * Sélectionner les profils les plus complets pour la page d'accueil.
- * Critères : données financières, nombre de déclarations, photo disponible.
- */
-function selectFeatured(elus: Elu[]): Elu[] {
-  const scored = elus.map((elu) => {
-    let score = 0;
-    if ((elu.patrimoine || 0) > 0) score += 50;
-    if ((elu.revenus || 0) > 0) score += 30;
-    if ((elu.immobilier || 0) > 0) score += 10;
-    if (elu.photo_url) score += 15;
-    if (elu.photo && elu.photo !== '/photos/placeholder.jpg') score += 15;
-    if (elu.declarations_csv && elu.declarations_csv.length > 0) score += elu.declarations_csv.length * 3;
-    else if (elu.nb_declarations_csv && elu.nb_declarations_csv > 0) score += elu.nb_declarations_csv * 3;
-    if (elu.hatvp?.nb_declarations_hatvp) score += elu.hatvp.nb_declarations_hatvp * 2;
-    if (elu.mandats && elu.mandats.length > 1) score += 5;
-    // Bonus pour mandats nationaux
-    const nationalTypes = ['depute', 'senateur', 'president', 'gouvernement', 'europe'];
-    if (elu.types_mandat?.some((tp) => nationalTypes.includes(tp))) score += 20;
-    return { elu, score };
-  });
-
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, FEATURED_COUNT).map((s) => s.elu);
-}
+type ViewMode = 'cards' | 'list';
 
 export default function ListePage() {
   const { lang } = useLang();
-  const { loading, getFiltered, searchTerm } = useElus();
+  const { loading, getFiltered, searchTerm, mandatFilter, setMandatFilter, elus } = useElus();
   const filteredElus = getFiltered();
-  const [showAll, setShowAll] = useState(true);
+  const [page, setPage] = useState(0);
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
 
   useEffect(() => {
     loadElus();
+  }, []);
+
+  // Reset to first page whenever filters/search change
+  useEffect(() => {
+    setPage(0);
+  }, [searchTerm, mandatFilter]);
+
+  const totalCount = filteredElus.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages - 1);
+
+  const displayedElus = useMemo(
+    () => filteredElus.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE),
+    [filteredElus, currentPage],
+  );
+
+  const goToPage = useCallback((p: number) => {
+    setPage(p);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
   if (loading) {
@@ -57,14 +55,6 @@ export default function ListePage() {
       </div>
     );
   }
-
-  // Si recherche active ou "voir tout", afficher tous les résultats
-  const isSearching = searchTerm.length > 0;
-  const displayedElus = (isSearching || showAll)
-    ? filteredElus
-    : selectFeatured(filteredElus);
-
-  const totalCount = filteredElus.length;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -91,58 +81,121 @@ export default function ListePage() {
       {/* SearchBar */}
       <SearchBar />
 
-      {/* Section titre */}
-      {!isSearching && !showAll && (
-        <div className="flex items-center gap-3 mb-6">
-          <Users className="w-5 h-5 text-red-500" />
-          <h3 className="text-lg font-semibold text-th-text-secondary">
-            {t('landing.featured', lang)}
-          </h3>
-          <span className="text-sm text-th-text-muted">
-            {t('landing.featured.sub', lang)}
-          </span>
-        </div>
+      {/* D3 interactive stats */}
+      {elus.length > 0 && (
+        <ListeStats
+          elus={elus}
+          mandatFilter={mandatFilter}
+          onMandatFilter={(f: MandatFilter) => setMandatFilter(f)}
+        />
       )}
+
+      {/* View mode toggle */}
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm text-th-text-muted">
+          {totalCount.toLocaleString('fr-FR')} {t('landing.counted', lang)}
+        </p>
+        <div className="flex rounded-lg border border-th-border overflow-hidden" role="radiogroup" aria-label={lang === 'fr' ? 'Mode d\'affichage' : 'View mode'}>
+          <button
+            onClick={() => setViewMode('list')}
+            role="radio"
+            aria-checked={viewMode === 'list'}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+              viewMode === 'list'
+                ? 'bg-red-600 text-white'
+                : 'bg-th-card text-th-text-secondary hover:bg-th-bg-secondary'
+            }`}
+          >
+            <List size={14} />
+            {t('view.list', lang)}
+          </button>
+          <button
+            onClick={() => setViewMode('cards')}
+            role="radio"
+            aria-checked={viewMode === 'cards'}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+              viewMode === 'cards'
+                ? 'bg-red-600 text-white'
+                : 'bg-th-card text-th-text-secondary hover:bg-th-bg-secondary'
+            }`}
+          >
+            <LayoutGrid size={14} />
+            {t('view.cards', lang)}
+          </button>
+        </div>
+      </div>
 
       {/* Galerie */}
       {displayedElus.length > 0 ? (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
-            {displayedElus.map((elu, index) => (
-              <PersonCard key={elu.id} elu={elu} index={index} />
-            ))}
-          </div>
-
-          {/* Bouton "Voir la base complète" */}
-          {!isSearching && !showAll && totalCount > FEATURED_COUNT && (
-            <div className="text-center mt-12">
-              <button
-                onClick={() => setShowAll(true)}
-                className="inline-flex items-center gap-3 px-8 py-4 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors shadow-lg hover:shadow-xl font-bold text-lg"
-              >
-                <Database className="w-5 h-5" />
-                {t('landing.see_all', lang)} ({totalCount.toLocaleString('fr-FR')} {t('landing.counted', lang)})
-                <ChevronDown className="w-5 h-5" />
-              </button>
-              <p className="text-sm text-th-text-muted mt-3">
-                {t('landing.see_all.sub', lang)}
-              </p>
+          {viewMode === 'cards' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
+              {displayedElus.map((elu, index) => (
+                <PersonCard key={elu.id} elu={elu} index={index} />
+              ))}
+            </div>
+          ) : (
+            <div className="bg-th-card rounded-xl border border-th-border overflow-hidden">
+              {displayedElus.map((elu) => (
+                <PersonRow key={elu.id} elu={elu} />
+              ))}
             </div>
           )}
 
-          {/* Bouton retour aux vedettes */}
-          {!isSearching && showAll && (
-            <div className="text-center mt-8">
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <nav
+              aria-label="Pagination"
+              className="flex items-center justify-center gap-2 mt-10"
+            >
               <button
-                onClick={() => {
-                  setShowAll(false);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-th-card text-th-text-secondary rounded-lg hover:bg-th-bg-secondary transition-colors border border-th-border"
+                onClick={() => goToPage(currentPage - 1)}
+                disabled={currentPage === 0}
+                aria-label={lang === 'fr' ? 'Page précédente' : 'Previous page'}
+                className="p-2 rounded-lg border border-th-border bg-th-card text-th-text-secondary hover:bg-th-bg-secondary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
-                {t('landing.back_featured', lang)}
+                <ChevronLeft size={18} />
               </button>
-            </div>
+
+              {/* Page numbers — show up to 5 around current */}
+              {Array.from({ length: totalPages }, (_, i) => i)
+                .filter(i => i === 0 || i === totalPages - 1 || Math.abs(i - currentPage) <= 2)
+                .reduce<(number | 'ellipsis')[]>((acc, i, idx, arr) => {
+                  if (idx > 0) {
+                    const prev = arr[idx - 1] as number;
+                    if (i - prev > 1) acc.push('ellipsis');
+                  }
+                  acc.push(i);
+                  return acc;
+                }, [])
+                .map((item, idx) =>
+                  item === 'ellipsis' ? (
+                    <span key={`e${idx}`} className="px-1 text-th-text-muted" aria-hidden="true">…</span>
+                  ) : (
+                    <button
+                      key={item}
+                      onClick={() => goToPage(item)}
+                      aria-current={item === currentPage ? 'page' : undefined}
+                      className={`min-w-[2.25rem] h-9 rounded-lg text-sm font-medium transition-colors ${
+                        item === currentPage
+                          ? 'bg-red-600 text-white'
+                          : 'border border-th-border bg-th-card text-th-text-secondary hover:bg-th-bg-secondary'
+                      }`}
+                    >
+                      {item + 1}
+                    </button>
+                  ),
+                )}
+
+              <button
+                onClick={() => goToPage(currentPage + 1)}
+                disabled={currentPage >= totalPages - 1}
+                aria-label={lang === 'fr' ? 'Page suivante' : 'Next page'}
+                className="p-2 rounded-lg border border-th-border bg-th-card text-th-text-secondary hover:bg-th-bg-secondary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </nav>
           )}
         </>
       ) : (
