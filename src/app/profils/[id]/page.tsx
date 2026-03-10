@@ -8,6 +8,8 @@ import { ArrowLeft, ExternalLink, User, Briefcase, MapPin, Calendar, FileText, S
 import { Elu } from '@/lib/types';
 import { useLang, t } from '@/lib/i18n';
 import PortfolioChart from '@/components/PortfolioChart';
+import RevenueTimelineChart from '@/components/RevenueTimelineChart';
+import PatrimoineBreakdownChart from '@/components/PatrimoineBreakdownChart';
 
 // Mapping type_mandat → label lisible
 const MANDAT_LABEL_KEYS: Record<string, string> = {
@@ -1000,6 +1002,46 @@ export default function ProfilPage() {
               patrimoine={elu.patrimoine || 0}
             />
           )}
+
+          {/* Patrimoine breakdown by category — shows horizontal bars for each asset type */}
+          {(() => {
+            const patrimoineCategories = hatvpSections
+              .filter(({ category }) => category === 'patrimoine')
+              .filter(({ value }) => value != null && value > 0)
+              .map(({ label, value, count }) => ({
+                label,
+                value: value as number,
+                count,
+              }));
+            if (patrimoineCategories.length >= 2) {
+              return <PatrimoineBreakdownChart categories={patrimoineCategories} />;
+            }
+            return null;
+          })()}
+
+          {/* Revenue timeline — bar chart showing income by year */}
+          {(() => {
+            const yearRevenues: { annee: string; montant: number }[] = [];
+            const addRevenues = (items?: Record<string, unknown>[]) => {
+              if (!items) return;
+              for (const item of items) {
+                const annuels = item.revenus_annuels as { annee?: string; montant?: number }[] | undefined;
+                if (annuels && Array.isArray(annuels)) {
+                  for (const ys of annuels) {
+                    if (ys.annee && typeof ys.montant === 'number' && ys.montant > 0) {
+                      yearRevenues.push({ annee: ys.annee, montant: ys.montant });
+                    }
+                  }
+                }
+              }
+            };
+            addRevenues(elu.hatvp?.details_activites as Record<string, unknown>[] | undefined);
+            addRevenues(elu.hatvp?.details_mandats as Record<string, unknown>[] | undefined);
+            if (yearRevenues.length >= 2) {
+              return <RevenueTimelineChart yearlyData={yearRevenues} />;
+            }
+            return null;
+          })()}
 
           {/* Mandats et Fonctions — current and past */}
           {elu.mandats && elu.mandats.length > 0 && (
