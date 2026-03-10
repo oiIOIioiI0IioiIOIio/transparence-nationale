@@ -99,7 +99,7 @@ export default function PatrimoineBreakdownChart({ categories }: PatrimoineBreak
                   />
                   {/* Inline count badge */}
                   {d.count > 0 && (
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-th-text-muted font-medium">
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-th-text-muted font-medium">
                       ×{d.count}
                     </span>
                   )}
