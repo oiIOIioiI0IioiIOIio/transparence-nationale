@@ -3,20 +3,24 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useElus, loadElus } from '@/hooks/useElus';
 import PersonCard from '@/components/PersonCard';
+import PersonRow from '@/components/PersonRow';
 import SearchBar from '@/components/SearchBar';
 import ListeStats from '@/components/ListeStats';
-import { Loader2, ChevronLeft, ChevronRight, Database, Search } from 'lucide-react';
+import { Loader2, ChevronLeft, ChevronRight, Database, Search, LayoutGrid, List } from 'lucide-react';
 import { MandatFilter } from '@/lib/types';
 import { useLang, t } from '@/lib/i18n';
 
 // Cards per page — keeps DOM light on mobile and desktop
 const PAGE_SIZE = 60;
 
+type ViewMode = 'cards' | 'list';
+
 export default function ListePage() {
   const { lang } = useLang();
   const { loading, getFiltered, searchTerm, mandatFilter, setMandatFilter, elus } = useElus();
   const filteredElus = getFiltered();
   const [page, setPage] = useState(0);
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
 
   useEffect(() => {
     loadElus();
@@ -86,14 +90,57 @@ export default function ListePage() {
         />
       )}
 
+      {/* View mode toggle */}
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm text-th-text-muted">
+          {totalCount.toLocaleString('fr-FR')} {t('landing.counted', lang)}
+        </p>
+        <div className="flex rounded-lg border border-th-border overflow-hidden" role="radiogroup" aria-label={lang === 'fr' ? 'Mode d\'affichage' : 'View mode'}>
+          <button
+            onClick={() => setViewMode('list')}
+            role="radio"
+            aria-checked={viewMode === 'list'}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+              viewMode === 'list'
+                ? 'bg-red-600 text-white'
+                : 'bg-th-card text-th-text-secondary hover:bg-th-bg-secondary'
+            }`}
+          >
+            <List size={14} />
+            {t('view.list', lang)}
+          </button>
+          <button
+            onClick={() => setViewMode('cards')}
+            role="radio"
+            aria-checked={viewMode === 'cards'}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+              viewMode === 'cards'
+                ? 'bg-red-600 text-white'
+                : 'bg-th-card text-th-text-secondary hover:bg-th-bg-secondary'
+            }`}
+          >
+            <LayoutGrid size={14} />
+            {t('view.cards', lang)}
+          </button>
+        </div>
+      </div>
+
       {/* Galerie */}
       {displayedElus.length > 0 ? (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
-            {displayedElus.map((elu, index) => (
-              <PersonCard key={elu.id} elu={elu} index={index} />
-            ))}
-          </div>
+          {viewMode === 'cards' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
+              {displayedElus.map((elu, index) => (
+                <PersonCard key={elu.id} elu={elu} index={index} />
+              ))}
+            </div>
+          ) : (
+            <div className="bg-th-card rounded-xl border border-th-border overflow-hidden">
+              {displayedElus.map((elu) => (
+                <PersonRow key={elu.id} elu={elu} />
+              ))}
+            </div>
+          )}
 
           {/* Pagination */}
           {totalPages > 1 && (

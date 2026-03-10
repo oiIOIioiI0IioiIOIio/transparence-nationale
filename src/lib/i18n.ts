@@ -286,6 +286,9 @@ const translations: Record<string, Record<Lang, string>> = {
   'stats.total_with_data': { fr: 'avec patrimoine déclaré', en: 'with declared wealth' },
   'stats.toggle_show': { fr: 'Afficher les statistiques', en: 'Show statistics' },
   'stats.toggle_hide': { fr: 'Masquer les statistiques', en: 'Hide statistics' },
+  // View mode toggle
+  'view.cards': { fr: 'Cartes', en: 'Cards' },
+  'view.list': { fr: 'Liste', en: 'List' },
   // New keys
   'profil.no_patrimoine_mandat': {
     fr: 'Son mandat n\'impose pas la déclaration de patrimoine. Seules les déclarations de situation patrimoniale des membres du gouvernement et des membres du collège de la Haute Autorité sont publiées sur hatvp.fr.',
