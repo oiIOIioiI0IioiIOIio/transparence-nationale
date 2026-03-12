@@ -130,6 +130,8 @@ def parse_args():
                    help="Générer les fichiers JSON par personne (public/data/elus/{id}.json) depuis elus.json")
     p.add_argument("--reorganize",       action="store_true",
                    help="Réorganiser les données: fichiers individuels complets + elus.json allégé pour la liste")
+    p.add_argument("--clear-data",      action="store_true",
+                   help="Supprimer toutes les données scrapées des profils (garder uniquement identité + photo)")
     p.add_argument("--save-every",       type=int, default=100,
                    help="Sauvegarder les fichiers individuels tous les N élus (défaut 100)")
     return p.parse_args()
@@ -1841,6 +1843,81 @@ def reorganize_data(batch_size: int = 100) -> None:
     print(f"✅ elus.json allégé : {slim_size:.1f} MB ({len(slim_list)} élus)")
 
 
+# Fields preserved when clearing data (identity + photo only)
+_CLEAR_DATA_KEEP_FIELDS = {
+    "id", "nom", "prenom", "fonction", "region", "mandats", "types_mandat",
+    "photo", "photo_url",
+}
+
+
+def clear_all_data() -> None:
+    """Remove all scraped data from profiles, keeping only identity + photo.
+
+    This resets all individual JSONs in public/data/elus/ and elus.json
+    so that a fresh re-scrape can repopulate them without carrying over
+    errors from previous parsing runs.
+    """
+    all_elus = load_elus()
+    if not all_elus:
+        print("⚠ elus.json vide ou introuvable.")
+        return
+
+    os.makedirs(ELUS_DETAIL_DIR, exist_ok=True)
+    total = len(all_elus)
+    print(f"\n🗑️  Suppression des données scrapées ({total} profils)…")
+    print(f"   → Champs conservés : {', '.join(sorted(_CLEAR_DATA_KEEP_FIELDS))}")
+    print(f"   → Tout le reste sera supprimé")
+
+    cleared_list: list[dict] = []
+    cleared_files = 0
+
+    for elu in all_elus:
+        elu_id = elu.get("id", "")
+        if not elu_id:
+            continue
+
+        # Build skeleton: keep only identity fields
+        skeleton: dict = {}
+        for k in _CLEAR_DATA_KEEP_FIELDS:
+            v = elu.get(k)
+            if v is not None and v != "" and v != 0 and v != []:
+                skeleton[k] = v
+        # Always ensure minimal fields
+        for k in ("id", "nom", "prenom", "fonction"):
+            if k not in skeleton:
+                skeleton[k] = elu.get(k, "")
+
+        # Also check individual JSON for photo fields that might not be in
+        # elus.json (since elus.json is slim)
+        ind_path = os.path.join(ELUS_DETAIL_DIR, f"{elu_id}.json")
+        if os.path.exists(ind_path):
+            try:
+                with open(ind_path, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+                for k in ("photo", "photo_url"):
+                    if k not in skeleton:
+                        v = existing.get(k)
+                        if v:
+                            skeleton[k] = v
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        # Write cleared individual JSON
+        with open(ind_path, "w", encoding="utf-8") as f:
+            json.dump(skeleton, f, ensure_ascii=False, separators=(",", ":"))
+        cleared_files += 1
+
+        cleared_list.append(skeleton)
+
+    # Save cleared elus.json
+    with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
+        json.dump(cleared_list, f, ensure_ascii=False, separators=(",", ":"))
+
+    slim_size = os.path.getsize(OUTPUT_JSON) / (1024 * 1024)
+    print(f"\n✅ {cleared_files} fichiers individuels vidés")
+    print(f"✅ elus.json vidé : {slim_size:.1f} MB ({len(cleared_list)} profils)")
+
+
 def find_elu_by_name(elus: list[dict], query: str) -> dict | None:
     q = normalize_name(query)
     for e in elus:
@@ -2073,6 +2150,12 @@ def main():
 
     os.makedirs(CACHE_DIR, exist_ok=True)
     os.makedirs(os.path.join(CACHE_DIR, "xmls"), exist_ok=True)
+
+    # ── Mode clear-data: strip all scraped data from profiles ────────────────
+    # (Does not need CSV/XML, so handle before network operations)
+    if args.clear_data:
+        clear_all_data()
+        return
 
     # ── Charger le CSV index ───────────────────────────────────────────────────
     print("\n📥 Chargement de l'index CSV HATVP…")

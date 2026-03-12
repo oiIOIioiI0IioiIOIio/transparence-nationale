@@ -112,6 +112,19 @@ _MONTANT_TOLERANCE_EUROS: float = 1.0  # Rounding tolerance for montant_euro vs 
 # Values within 1 € are considered equal (same origin, just rounding).
 _PATRIMOINE_MATCH_TOLERANCE_EUROS: float = 1.0
 
+# ── Plausibility bounds (flag likely parsing errors) ─────────────────────────
+# These thresholds are deliberately generous to catch only obvious anomalies.
+# French elected officials can be wealthy, but values above these limits almost
+# certainly indicate PDF parsing errors (concatenated numbers, wrong decimal
+# placement, etc.).
+_MAX_PATRIMOINE_EUROS: float = 100_000_000.0        # 100 M€
+_MAX_REVENUS_ANNUAL_EUROS: float = 5_000_000.0      # 5 M€ per year
+_MAX_TOTAL_REVENUS_EUROS: float = 50_000_000.0      # 50 M€ total across all years
+_MAX_MONTANT_ITEM_EUROS: float = 50_000_000.0       # 50 M€ per detail item
+_MAX_IMMOBILIER_EUROS: float = 50_000_000.0          # 50 M€
+_MAX_PLACEMENTS_EUROS: float = 100_000_000.0         # 100 M€
+_MIN_PATRIMOINE_EUROS: float = -10_000_000.0         # -10 M€ (extreme debt)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Description parsing helpers
@@ -889,6 +902,215 @@ def check_elu(data: dict) -> list[dict]:
                         ),
                     })
 
+    # ── 15. Patrimoine too high (likely parsing error) ──────────────────
+    patrimoine = data.get("patrimoine")
+    if isinstance(patrimoine, (int, float)) and patrimoine > _MAX_PATRIMOINE_EUROS:
+        issues.append({
+            "type": "patrimoine_too_high",
+            "key": "patrimoine",
+            "value": patrimoine,
+            "message": (
+                f"patrimoine={patrimoine:,.0f} € dépasse le seuil "
+                f"de {_MAX_PATRIMOINE_EUROS:,.0f} € (erreur probable de parsing)"
+            ),
+        })
+
+    # Also check hatvp and hatvp_pdf patrimoine figures
+    for source, sub_key in (
+        ("hatvp", "patrimoine_net_euro"),
+        ("hatvp", "total_actif_brut_euro"),
+        ("hatvp_pdf", "patrimoine_brut_euro"),
+        ("hatvp_pdf", "patrimoine_net_euro"),
+    ):
+        sub = data.get(source)
+        if not isinstance(sub, dict):
+            continue
+        val = sub.get(sub_key)
+        if isinstance(val, (int, float)) and val > _MAX_PATRIMOINE_EUROS:
+            issues.append({
+                "type": "patrimoine_too_high",
+                "key": f"{source}.{sub_key}",
+                "value": val,
+                "message": (
+                    f"{source}.{sub_key}={val:,.0f} € dépasse le seuil "
+                    f"de {_MAX_PATRIMOINE_EUROS:,.0f} € (erreur probable de parsing)"
+                ),
+            })
+
+    # ── 16. Patrimoine too negative (extreme debt, likely parsing error) ─
+    if isinstance(patrimoine, (int, float)) and patrimoine < _MIN_PATRIMOINE_EUROS:
+        issues.append({
+            "type": "patrimoine_too_low",
+            "key": "patrimoine",
+            "value": patrimoine,
+            "message": (
+                f"patrimoine={patrimoine:,.0f} € en dessous du seuil "
+                f"de {_MIN_PATRIMOINE_EUROS:,.0f} € (erreur probable de parsing)"
+            ),
+        })
+
+    for source, sub_key in (
+        ("hatvp", "patrimoine_net_euro"),
+        ("hatvp_pdf", "patrimoine_net_euro"),
+    ):
+        sub = data.get(source)
+        if not isinstance(sub, dict):
+            continue
+        val = sub.get(sub_key)
+        if isinstance(val, (int, float)) and val < _MIN_PATRIMOINE_EUROS:
+            issues.append({
+                "type": "patrimoine_too_low",
+                "key": f"{source}.{sub_key}",
+                "value": val,
+                "message": (
+                    f"{source}.{sub_key}={val:,.0f} € en dessous du seuil "
+                    f"de {_MIN_PATRIMOINE_EUROS:,.0f} € (erreur probable de parsing)"
+                ),
+            })
+
+    # ── 17. Total revenus too high ──────────────────────────────────────
+    total_rev = (hatvp.get("total_revenus_euro") if hatvp else None)
+    if isinstance(total_rev, (int, float)) and total_rev > _MAX_TOTAL_REVENUS_EUROS:
+        issues.append({
+            "type": "revenus_too_high",
+            "key": "hatvp.total_revenus_euro",
+            "value": total_rev,
+            "message": (
+                f"total_revenus_euro={total_rev:,.0f} € dépasse le seuil "
+                f"de {_MAX_TOTAL_REVENUS_EUROS:,.0f} € (erreur probable de parsing)"
+            ),
+        })
+
+    root_rev = data.get("revenus")
+    if isinstance(root_rev, (int, float)) and root_rev > _MAX_TOTAL_REVENUS_EUROS:
+        issues.append({
+            "type": "revenus_too_high",
+            "key": "revenus",
+            "value": root_rev,
+            "message": (
+                f"revenus={root_rev:,.0f} € dépasse le seuil "
+                f"de {_MAX_TOTAL_REVENUS_EUROS:,.0f} € (erreur probable de parsing)"
+            ),
+        })
+
+    # ── 18. Individual montant_euro too high in any detail array ─────────
+    if hatvp:
+        for det_key in NB_TO_DETAILS.values():
+            items = hatvp.get(det_key)
+            if not isinstance(items, list):
+                continue
+            for i, item in enumerate(items):
+                if not isinstance(item, dict):
+                    continue
+                montant = item.get("montant_euro")
+                if isinstance(montant, (int, float)) and abs(montant) > _MAX_MONTANT_ITEM_EUROS:
+                    issues.append({
+                        "type": "montant_item_too_high",
+                        "key": det_key,
+                        "index": i,
+                        "value": montant,
+                        "message": (
+                            f"{det_key}[{i}]: montant_euro={montant:,.0f} € "
+                            f"dépasse le seuil de {_MAX_MONTANT_ITEM_EUROS:,.0f} € "
+                            f"(erreur probable de parsing)"
+                        ),
+                    })
+
+    # ── 19. Single-year revenue too high in revenus_annuels ─────────────
+    if hatvp:
+        for det_key in NB_TO_DETAILS.values():
+            items = hatvp.get(det_key)
+            if not isinstance(items, list):
+                continue
+            for i, item in enumerate(items):
+                if not isinstance(item, dict):
+                    continue
+                for rev in (item.get("revenus_annuels") or []):
+                    if not isinstance(rev, dict):
+                        continue
+                    m = rev.get("montant")
+                    if isinstance(m, (int, float)) and abs(m) > _MAX_REVENUS_ANNUAL_EUROS:
+                        issues.append({
+                            "type": "revenu_annuel_too_high",
+                            "key": det_key,
+                            "index": i,
+                            "annee": rev.get("annee", "?"),
+                            "value": m,
+                            "message": (
+                                f"{det_key}[{i}]: revenu annuel "
+                                f"{rev.get('annee', '?')}={m:,.0f} € dépasse le seuil "
+                                f"de {_MAX_REVENUS_ANNUAL_EUROS:,.0f} € "
+                                f"(erreur probable de parsing)"
+                            ),
+                        })
+
+    # ── 20. Immobilier too high ─────────────────────────────────────────
+    immobilier = data.get("immobilier")
+    if isinstance(immobilier, (int, float)) and immobilier > _MAX_IMMOBILIER_EUROS:
+        issues.append({
+            "type": "immobilier_too_high",
+            "key": "immobilier",
+            "value": immobilier,
+            "message": (
+                f"immobilier={immobilier:,.0f} € dépasse le seuil "
+                f"de {_MAX_IMMOBILIER_EUROS:,.0f} € (erreur probable de parsing)"
+            ),
+        })
+    hatvp_pdf = data.get("hatvp_pdf")
+    if isinstance(hatvp_pdf, dict):
+        immo_pdf = hatvp_pdf.get("immobilier_euro")
+        if isinstance(immo_pdf, (int, float)) and immo_pdf > _MAX_IMMOBILIER_EUROS:
+            issues.append({
+                "type": "immobilier_too_high",
+                "key": "hatvp_pdf.immobilier_euro",
+                "value": immo_pdf,
+                "message": (
+                    f"hatvp_pdf.immobilier_euro={immo_pdf:,.0f} € dépasse le seuil "
+                    f"de {_MAX_IMMOBILIER_EUROS:,.0f} € (erreur probable de parsing)"
+                ),
+            })
+
+    # ── 21. Placements too high ─────────────────────────────────────────
+    placements = data.get("placements_montant")
+    if isinstance(placements, (int, float)) and placements > _MAX_PLACEMENTS_EUROS:
+        issues.append({
+            "type": "placements_too_high",
+            "key": "placements_montant",
+            "value": placements,
+            "message": (
+                f"placements_montant={placements:,.0f} € dépasse le seuil "
+                f"de {_MAX_PLACEMENTS_EUROS:,.0f} € (erreur probable de parsing)"
+            ),
+        })
+
+    # ── 22. Negative montant_euro where it should be positive ───────────
+    # Revenue-type detail arrays should not have large negative amounts.
+    if hatvp:
+        _revenue_detail_keys = {
+            "details_mandats", "details_activites",
+            "details_activites_consultant", "details_fonctions_benevoles",
+            "details_participations_organes",
+        }
+        for det_key in _revenue_detail_keys:
+            items = hatvp.get(det_key)
+            if not isinstance(items, list):
+                continue
+            for i, item in enumerate(items):
+                if not isinstance(item, dict):
+                    continue
+                montant = item.get("montant_euro")
+                if isinstance(montant, (int, float)) and montant < -_MONTANT_TOLERANCE_EUROS:
+                    issues.append({
+                        "type": "negative_montant",
+                        "key": det_key,
+                        "index": i,
+                        "value": montant,
+                        "message": (
+                            f"{det_key}[{i}]: montant_euro={montant:,.0f} € négatif "
+                            f"(les revenus ne devraient pas être négatifs)"
+                        ),
+                    })
+
     return issues
 
 
@@ -1113,12 +1335,21 @@ def verify_after_fix(data: dict) -> list[dict]:
     # - truncated_name: truncated organisme/mandat names — needs manual review
     # - invalid_revenus_years: anomalous year values — may need source data
     # - invalid_pourcentage: impossible pourcentage — may need source data
+    # - plausibility checks (patrimoine_too_high, etc.): need re-scrape to fix
     unfixable_types = {
         "count_without_details",
         "invalid_denomination",
         "truncated_name",
         "invalid_revenus_years",
         "invalid_pourcentage",
+        "patrimoine_too_high",
+        "patrimoine_too_low",
+        "revenus_too_high",
+        "montant_item_too_high",
+        "revenu_annuel_too_high",
+        "immobilier_too_high",
+        "placements_too_high",
+        "negative_montant",
     }
     return [i for i in check_elu(data) if i["type"] in unfixable_types]
 
@@ -1202,6 +1433,14 @@ def main():
                     "truncated_name",
                     "invalid_revenus_years",
                     "invalid_pourcentage",
+                    "patrimoine_too_high",
+                    "patrimoine_too_low",
+                    "revenus_too_high",
+                    "montant_item_too_high",
+                    "revenu_annuel_too_high",
+                    "immobilier_too_high",
+                    "placements_too_high",
+                    "negative_montant",
                 }
                 fixable_count = len(issues) - len(
                     [i for i in issues if i["type"] in unfixable_types]
@@ -1247,6 +1486,14 @@ def main():
                     "invalid_pourcentage": "📊",
                     "montant_vs_revenus_mismatch": "💰",
                     "merged_participation_amounts": "🔢",
+                    "patrimoine_too_high": "🚨",
+                    "patrimoine_too_low": "🚨",
+                    "revenus_too_high": "🚨",
+                    "montant_item_too_high": "🚨",
+                    "revenu_annuel_too_high": "🚨",
+                    "immobilier_too_high": "🚨",
+                    "placements_too_high": "🚨",
+                    "negative_montant": "🚨",
                 }.get(issue["type"], "⚠️ ")
                 summary_lines.append(f"  {icon} {fname}: {issue['message']}")
 
